@@ -198,6 +198,41 @@ function defineTests(runtime: Runtime) {
     assertEquals(Object.keys(obs.state.inputs), []);
   });
 
+  Deno.test(`${runtime.name}: stop --quit-obs refuses before changing anything`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    await brb(obs, "setup");
+    await brb(obs, "on air");
+    assertEquals(obs.state.virtualCam, true);
+
+    // Recording: refused, and the message and virtual camera are untouched.
+    obs.state.recording = true;
+    const busy = await brb(obs, "stop", "--quit-obs");
+    assertEquals(busy.code, 1);
+    assertStringIncludes(busy.err, "Not quitting OBS: OBS is recording");
+    assertEquals(obs.state.virtualCam, true);
+    assertEquals(obs.state.items[0].enabled, true);
+
+    // Not recording, but whatever listens on the port is this test runner, not OBS: refused again.
+    obs.state.recording = false;
+    const impostor = await brb(obs, "stop", "--quit-obs");
+    assertEquals(impostor.code, 1);
+    assertStringIncludes(impostor.err, "Not quitting OBS:");
+    assertEquals(obs.state.virtualCam, true);
+    assertEquals(obs.state.items[0].enabled, true);
+
+    // Without the flag, stop still works as before.
+    assertEquals((await brb(obs, "stop")).code, 0);
+    assertEquals(obs.state.virtualCam, false);
+  });
+
+  Deno.test(`${runtime.name}: --quit-obs only works with stop`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    const result = await brb(obs, "hello", "--quit-obs");
+    assertEquals(result.code, 1);
+    assertStringIncludes(result.err, "--quit-obs only works with the stop command");
+    assertEquals(Object.keys(obs.state.inputs), []);
+  });
+
   Deno.test(`${runtime.name}: stop works in a scene that was never set up`, async () => {
     await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
     const result = await brb(obs, "stop");

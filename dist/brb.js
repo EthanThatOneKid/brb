@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // main.ts
-import process from "node:process";
+import process2 from "node:process";
 import { parseArgs } from "node:util";
 
 // package.json
@@ -543,6 +543,150 @@ function buildMessage(words, backInMs, now = /* @__PURE__ */ new Date(), fallbac
 Back at ${formatClock(new Date(now.getTime() + backInMs))}`;
 }
 
+// quit.ts
+import { execFile } from "node:child_process";
+import process from "node:process";
+import { promisify } from "node:util";
+var run = promisify(execFile);
+var LOCAL_HOSTS = /* @__PURE__ */ new Set([
+  "127.0.0.1",
+  "localhost",
+  "::1",
+  "[::1]",
+  "0.0.0.0"
+]);
+var prefix = "Not quitting OBS:";
+function parseNetstatPid(output, port) {
+  for (const line of output.split(/\r?\n/)) {
+    const cols = line.trim().split(/\s+/);
+    if (cols.length < 5 || cols[0].toUpperCase() !== "TCP") continue;
+    const [, local, foreign] = cols;
+    if (!local.endsWith(`:${port}`) || !/^(0\.0\.0\.0:0|\[::\]:0|\*:\*)$/.test(foreign)) continue;
+    const pid = Number(cols[cols.length - 1]);
+    if (Number.isInteger(pid) && pid > 0) return pid;
+  }
+  return void 0;
+}
+function parseTasklistName(output) {
+  const match = /^"([^"]+)","\d+"/m.exec(output);
+  return match?.[1];
+}
+var windowsHost = {
+  async listeningPid(port) {
+    const { stdout } = await run("netstat", [
+      "-ano",
+      "-p",
+      "tcp"
+    ]);
+    return parseNetstatPid(stdout, port);
+  },
+  async processName(pid) {
+    const { stdout } = await run("tasklist", [
+      "/FI",
+      `PID eq ${pid}`,
+      "/FO",
+      "CSV",
+      "/NH"
+    ]);
+    return parseTasklistName(stdout);
+  },
+  async requestClose(pid) {
+    await run("taskkill", [
+      "/PID",
+      String(pid)
+    ]);
+  },
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+};
+var unixHost = {
+  async listeningPid(port) {
+    try {
+      const { stdout } = await run("lsof", [
+        "-nP",
+        `-iTCP:${port}`,
+        "-sTCP:LISTEN",
+        "-t"
+      ]);
+      const pid = Number(stdout.trim().split(/\s+/)[0]);
+      return Number.isInteger(pid) && pid > 0 ? pid : void 0;
+    } catch (error) {
+      if (error.code === "ENOENT") throw new Error("needs `lsof` to find the OBS process");
+      return void 0;
+    }
+  },
+  async processName(pid) {
+    try {
+      const { stdout } = await run("ps", [
+        "-p",
+        String(pid),
+        "-o",
+        "comm="
+      ]);
+      const name = stdout.trim().split("/").pop();
+      return name || void 0;
+    } catch {
+      return void 0;
+    }
+  },
+  requestClose(pid) {
+    process.kill(pid, "SIGTERM");
+    return Promise.resolve();
+  },
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+};
+var realHost = process.platform === "win32" ? windowsHost : unixHost;
+async function busyOutputs(obs) {
+  const busy = [];
+  const active = async (type) => {
+    try {
+      return (await obs.request(type)).outputActive;
+    } catch (error) {
+      if (error instanceof ObsRequestError) return false;
+      throw error;
+    }
+  };
+  if (await active("GetStreamStatus")) busy.push("streaming");
+  if (await active("GetRecordStatus")) busy.push("recording");
+  if (await active("GetReplayBufferStatus")) busy.push("running the replay buffer");
+  return busy;
+}
+async function prepareQuit(obs, wsUrl, host = realHost) {
+  const url = new URL(wsUrl);
+  if (!LOCAL_HOSTS.has(url.hostname)) {
+    throw new Error(`${prefix} ${url.hostname} isn't this machine, and brb can only close a local OBS.`);
+  }
+  const busy = await busyOutputs(obs);
+  if (busy.length) {
+    throw new Error(`${prefix} OBS is ${busy.join(" and ")}. Stop that first, or run \`brb stop\` without --quit-obs.`);
+  }
+  const port = Number(url.port || (url.protocol === "wss:" ? 443 : 80));
+  let pid;
+  try {
+    pid = await host.listeningPid(port);
+  } catch (error) {
+    throw new Error(`${prefix} ${error.message}.`);
+  }
+  if (pid === void 0) throw new Error(`${prefix} couldn't find the process listening on port ${port}.`);
+  const name = await host.processName(pid);
+  if (!name || !/^obs/i.test(name)) {
+    throw new Error(`${prefix} the process on port ${port} is "${name ?? "unknown"}" (pid ${pid}), which isn't OBS.`);
+  }
+  return pid;
+}
+async function closeObs(pid, host = realHost, timeoutMs = 1e4) {
+  try {
+    await host.requestClose(pid);
+  } catch (error) {
+    throw new Error(`Couldn't ask OBS to close: ${error.message.split("\n")[0]}`);
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await host.processName(pid) === void 0) return "OBS closed.";
+    await host.sleep(250);
+  }
+  throw new Error(`Asked OBS to close, but it's still running after ${timeoutMs / 1e3}s. It may be showing a dialog; check its window.`);
+}
+
 // main.ts
 var HELP = `brb: put a message on your OBS camera from the terminal.
 
@@ -553,10 +697,12 @@ Usage:
   brb setup               add the text source to the current scene (once per scene)
   brb cam on|off          start/stop the OBS virtual camera
   brb stop                hide the message, stop the virtual camera, and release the webcam (light off)
+  brb stop --quit-obs     ...and then close OBS (local only; refuses while recording or streaming)
   brb status              what viewers see right now
 
 Options:
   -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes)
+      --quit-obs          with the stop command: also close OBS, after checking it is not recording or streaming
       --no-cam            don't auto-start the virtual camera (showing a message starts it by default)
       --color <color>     text color: a name (white, red, ...) or hex ("#ff8800" or ff8800)
       --bg <color|none>   background box color, or "none" for no box
@@ -584,7 +730,7 @@ var COMMANDS = /* @__PURE__ */ new Set([
   "help"
 ]);
 async function main() {
-  const args = process.argv.slice(2);
+  const args = process2.argv.slice(2);
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -594,6 +740,9 @@ async function main() {
         short: "i"
       },
       "no-cam": {
+        type: "boolean"
+      },
+      "quit-obs": {
         type: "boolean"
       },
       cam: {
@@ -645,10 +794,13 @@ async function main() {
     console.log(HELP);
     return;
   }
-  const home = process.env.HOME ?? process.env.USERPROFILE;
-  const config = loadConfig(values.config, process.cwd().replaceAll("\\", "/"), home?.replaceAll("\\", "/"));
+  const home = process2.env.HOME ?? process2.env.USERPROFILE;
+  const config = loadConfig(values.config, process2.cwd().replaceAll("\\", "/"), home?.replaceAll("\\", "/"));
   const backInMs = values.in === void 0 ? void 0 : parseDuration(values.in);
   if (command === "cam" && rest[0] !== "on" && rest[0] !== "off") throw new Error("Usage: brb cam on|off");
+  if (values["quit-obs"] && command !== "stop") {
+    throw new Error("--quit-obs only works with the stop command: brb stop --quit-obs.");
+  }
   const style = styleFromFlags({
     color: values.color ?? config.color,
     bg: values.bg ?? config.bg,
@@ -656,12 +808,13 @@ async function main() {
   });
   const message = command ? void 0 : buildMessage(positionals, backInMs, /* @__PURE__ */ new Date(), config.message);
   const target = {
-    source: values.source ?? process.env.BRB_SOURCE ?? config.source ?? "brb-status",
+    source: values.source ?? process2.env.BRB_SOURCE ?? config.source ?? "brb-status",
     scene: values.scene ?? config.scene
   };
+  const obsUrl = values.url ?? process2.env.OBS_WEBSOCKET_URL ?? config.url ?? "ws://127.0.0.1:4455";
   const obs = await ObsClient.connect({
-    url: values.url ?? process.env.OBS_WEBSOCKET_URL ?? config.url ?? "ws://127.0.0.1:4455",
-    password: values.password ?? process.env.OBS_WEBSOCKET_PASSWORD
+    url: obsUrl,
+    password: values.password ?? process2.env.OBS_WEBSOCKET_PASSWORD
   });
   try {
     let result;
@@ -680,9 +833,16 @@ async function main() {
       case "status":
         result = await status(obs, target);
         break;
-      case "stop":
+      case "stop": {
+        const obsPid = values["quit-obs"] ? await prepareQuit(obs, obsUrl) : void 0;
         result = await stop(obs, target);
+        if (obsPid !== void 0) {
+          obs.close();
+          result += `
+${await closeObs(obsPid)}`;
+        }
         break;
+      }
       default:
         result = await show(obs, target, message, {
           startCamera: !values["no-cam"] && config.cam !== false,
@@ -698,5 +858,5 @@ try {
   await main();
 } catch (error) {
   console.error(`brb: ${error.message}`);
-  process.exitCode = 1;
+  process2.exitCode = 1;
 }

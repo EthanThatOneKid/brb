@@ -16,6 +16,9 @@ export class FakeObs implements AsyncDisposable {
     inputs: {} as Record<string, Json>,
     items: [] as Item[],
     virtualCam: false,
+    /** Set these in a test to simulate OBS being busy. */
+    recording: false,
+    streaming: false,
     /** Input kinds by name; anything not listed is a text source. */
     kinds: {} as Record<string, string>,
     current: "",
@@ -139,6 +142,12 @@ export class FakeObs implements AsyncDisposable {
         return;
       case "GetSceneItemEnabled":
         return { sceneItemEnabled: this.#item(data.sceneName as string, data.sceneItemId as number).enabled };
+      case "GetStreamStatus":
+        return { outputActive: s.streaming };
+      case "GetRecordStatus":
+        return { outputActive: s.recording, outputPaused: false };
+      case "GetReplayBufferStatus":
+        throw Object.assign(new Error("The replay buffer is not enabled."), { code: 604 });
       case "GetVirtualCamStatus":
         return { outputActive: s.virtualCam };
       case "StartVirtualCam":
