@@ -38,15 +38,22 @@ async function findItem(obs: Obs, scene: string, source: string): Promise<number
   }
 }
 
-/** Puts `text` on camera. */
-export async function show(obs: Obs, target: Target, text: string, startCamera = false): Promise<string> {
+/** Puts `text` on camera, starting the virtual camera first unless `startCamera` is false. */
+export async function show(obs: Obs, target: Target, text: string, startCamera = true): Promise<string> {
   const scene = await sceneOf(obs, target);
   const sceneItemId = await findItem(obs, scene, target.source);
   if (sceneItemId === undefined) throw new Error(SETUP_HINT(target, scene));
   await obs.request("SetInputSettings", { inputName: target.source, inputSettings: { text }, overlay: true });
   await obs.request("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: true });
-  if (startCamera) await cam(obs, "on");
-  return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}`;
+  let started = false;
+  if (startCamera) {
+    const { outputActive } = await obs.request<{ outputActive: boolean }>("GetVirtualCamStatus");
+    if (!outputActive) {
+      await obs.request("StartVirtualCam");
+      started = true;
+    }
+  }
+  return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}${started ? " (started virtual camera)" : ""}`;
 }
 
 /** Takes the message off camera. */

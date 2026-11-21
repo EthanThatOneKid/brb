@@ -16,20 +16,21 @@ brb off                         # message gone
 3. Install: `deno task install` (needs [Deno](https://deno.com)), or run `deno run -A main.ts ...` directly.
 4. With your scene active in OBS, run `brb setup`. It adds a hidden text source named `brb-status` (white bold text on a
    dark box, lower-center). Repeat once per scene you want it in, or pass `--scene`.
-5. Click **Start Virtual Camera** in OBS (or `brb cam on`) and pick "OBS Virtual Camera" in your call app.
+5. Pick "OBS Virtual Camera" in your call app. `brb` starts the virtual camera for you when it shows a message (or click
+   **Start Virtual Camera** in OBS, or `brb cam on`). Without it running, apps show the OBS logo.
 
 ## Commands
 
-| Command                     | What it does                                                      |
-| --------------------------- | ----------------------------------------------------------------- |
-| `brb [message...]`          | Show a message (default "Be right back"). `\n` makes a line break |
-| `brb ... --in 5m`           | Append "Back at <time>" (`5`, `5m`, `90s`, `1h30m`; bare = min)   |
-| `brb ... --cam`             | Also start the virtual camera                                     |
-| `brb off` (`clear`, `hide`) | Hide the message                                                  |
-| `brb setup`                 | Add the text source to the current scene                          |
-| `brb cam on\|off`           | Start/stop the virtual camera                                     |
-| `brb status`                | What viewers see right now                                        |
-| `brb -- off`                | Show the literal message "off"                                    |
+| Command                     | What it does                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `brb [message...]`          | Show a message (default "Be right back"); starts the virtual camera if off. `\n` = line break |
+| `brb ... --in 5m`           | Append "Back at <time>" (`5`, `5m`, `90s`, `1h30m`; bare = min)                               |
+| `brb ... --no-cam`          | Show without auto-starting the virtual camera                                                 |
+| `brb off` (`clear`, `hide`) | Hide the message                                                                              |
+| `brb setup`                 | Add the text source to the current scene                                                      |
+| `brb cam on\|off`           | Start/stop the virtual camera                                                                 |
+| `brb status`                | What viewers see right now                                                                    |
+| `brb -- off`                | Show the literal message "off"                                                                |
 
 ## Config
 

@@ -16,7 +16,7 @@ Usage:
 
 Options:
   -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes)
-      --cam               also start the virtual camera
+      --no-cam            don't auto-start the virtual camera (showing a message starts it by default)
   -s, --scene <name>      scene to act on (default: current program scene)
       --source <name>     text source name (default: brb-status, env BRB_SOURCE)
       --url <ws-url>      OBS WebSocket URL (default: ws://127.0.0.1:4455, env OBS_WEBSOCKET_URL)
@@ -33,7 +33,8 @@ async function main(): Promise<void> {
     allowPositionals: true,
     options: {
       in: { type: "string", short: "i" },
-      cam: { type: "boolean" },
+      "no-cam": { type: "boolean" },
+      cam: { type: "boolean" }, // accepted for compatibility; starting the camera is now the default
       scene: { type: "string", short: "s" },
       source: { type: "string" },
       url: { type: "string" },
@@ -83,7 +84,7 @@ async function main(): Promise<void> {
         result = await status(obs, target);
         break;
       default:
-        result = await show(obs, target, message!, values.cam);
+        result = await show(obs, target, message!, !values["no-cam"]);
     }
     console.log(result);
   } finally {
