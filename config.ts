@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 /**
  * `brb.json`: flag defaults you can commit and share. Flags and env vars always win over it.
  * The OBS password is deliberately not allowed here, since the file is meant to be shared.
@@ -64,9 +66,9 @@ export function loadConfig(explicitPath: string | undefined, cwd: string, home: 
   for (const path of candidates) {
     let text: string;
     try {
-      text = Deno.readTextFileSync(path);
+      text = readFileSync(path, "utf8");
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound && !explicitPath) continue;
+      if ((error as { code?: string }).code === "ENOENT" && !explicitPath) continue;
       throw new Error(`Can't read config ${path}: ${(error as Error).message}`);
     }
     return parseConfig(text, path);

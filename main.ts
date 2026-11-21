@@ -1,4 +1,5 @@
-#!/usr/bin/env -S deno run -A
+#!/usr/bin/env node
+import process from "node:process";
 import { parseArgs } from "node:util";
 import { cam, hide, setup, show, status, type Target } from "./commands.ts";
 import { loadConfig } from "./config.ts";
@@ -37,7 +38,9 @@ OBS needs Tools > WebSocket Server Settings > Enable WebSocket server.`;
 const COMMANDS = new Set(["off", "clear", "hide", "setup", "cam", "status", "help"]);
 
 async function main(): Promise<void> {
+  const args = process.argv.slice(2);
   const { values, positionals } = parseArgs({
+    args,
     allowPositionals: true,
     options: {
       in: { type: "string", short: "i" },
@@ -56,7 +59,7 @@ async function main(): Promise<void> {
   });
 
   // `--` forces everything after it to be a message, even if it looks like a command.
-  const forcedMessage = Deno.args.includes("--");
+  const forcedMessage = args.includes("--");
   const [first, ...rest] = positionals;
   const command = !forcedMessage && first && COMMANDS.has(first) ? first : undefined;
 
@@ -66,8 +69,8 @@ async function main(): Promise<void> {
   }
 
   // Validate before touching the network.
-  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
-  const config = loadConfig(values.config, Deno.cwd().replaceAll("\\", "/"), home?.replaceAll("\\", "/"));
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  const config = loadConfig(values.config, process.cwd().replaceAll("\\", "/"), home?.replaceAll("\\", "/"));
   const backInMs = values.in === undefined ? undefined : parseDuration(values.in);
   if (command === "cam" && rest[0] !== "on" && rest[0] !== "off") throw new Error("Usage: brb cam on|off");
   const style = styleFromFlags({
@@ -78,12 +81,12 @@ async function main(): Promise<void> {
   const message = command ? undefined : buildMessage(positionals, backInMs, new Date(), config.message);
 
   const target: Target = {
-    source: values.source ?? Deno.env.get("BRB_SOURCE") ?? config.source ?? "brb-status",
+    source: values.source ?? process.env.BRB_SOURCE ?? config.source ?? "brb-status",
     scene: values.scene ?? config.scene,
   };
   const obs = await ObsClient.connect({
-    url: values.url ?? Deno.env.get("OBS_WEBSOCKET_URL") ?? config.url ?? "ws://127.0.0.1:4455",
-    password: values.password ?? Deno.env.get("OBS_WEBSOCKET_PASSWORD"),
+    url: values.url ?? process.env.OBS_WEBSOCKET_URL ?? config.url ?? "ws://127.0.0.1:4455",
+    password: values.password ?? process.env.OBS_WEBSOCKET_PASSWORD,
   });
   try {
     let result: string;
@@ -111,11 +114,9 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.main) {
-  try {
-    await main();
-  } catch (error) {
-    console.error(`brb: ${(error as Error).message}`);
-    Deno.exit(1);
-  }
+try {
+  await main();
+} catch (error) {
+  console.error(`brb: ${(error as Error).message}`);
+  process.exitCode = 1;
 }

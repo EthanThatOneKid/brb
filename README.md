@@ -20,7 +20,8 @@ brb off                         # message gone
   - Source and releases: <https://github.com/obsproject/obs-studio>
   - Linux (Flatpak): <https://flathub.org/apps/com.obsproject.Studio>
   - Windows (winget, published by OBS Project): `winget install OBSProject.OBSStudio`
-- [Deno](https://deno.com) to install and run `brb`.
+- [Node.js](https://nodejs.org) 22 or newer, which provides `npx` (nothing else to install; no Deno or npm account
+  needed).
 
 For background on OBS's WebSocket server, see the official
 [remote control guide](https://obsproject.com/kb/remote-control-guide).
@@ -29,7 +30,13 @@ For background on OBS's WebSocket server, see the official
 
 1. In OBS: **Tools → WebSocket Server Settings → Enable WebSocket server**. Set a password and copy it.
 2. Export it: `OBS_WEBSOCKET_PASSWORD=...` (see [Config](#config)).
-3. Clone this repo and run `deno task install`, or run `deno run -A main.ts ...` directly.
+3. Run it straight from GitHub, with no install:
+
+   ```sh
+   npx github:EthanThatOneKid/brb "grabbing coffee"
+   ```
+
+   or install the short `brb` command once: `npm install -g github:EthanThatOneKid/brb`. The examples below assume that.
 4. In OBS, make a scene that contains your camera (a **Video Capture Device** source) and make it the active scene. Then
    run `brb setup`. It adds a hidden text source named `brb-status` (white bold text on a dark box, lower-center).
    Repeat once per scene you want it in, or pass `--scene`.
@@ -135,5 +142,11 @@ Don't flip the camera in OBS to "fix" it: that would make your tile look normal 
 
 ## Development
 
-`deno task check` runs fmt, lint, type-check, and tests. The tests drive the real client and commands against
-`fake_obs.ts`, a small in-process obs-websocket v5 server, so they run without OBS.
+You only need [Deno](https://deno.com) (for its fmt/lint/test tooling) and Node to work on `brb`. Users need only Node.
+
+- `dist/brb.js` is the single file `npx` runs. It's built from the TypeScript source with `deno task build` and
+  committed, so remember to rebuild (`deno task check` does it for you) before pushing.
+- `deno task check` builds, then runs fmt, lint, type-check, and tests. The tests drive the CLI against `fake_obs.ts`, a
+  small in-process obs-websocket v5 server, so they run without OBS. Each CLI test runs twice: the source on Deno and
+  the shipped bundle on Node.
+- `deno task brb ...` runs the source directly.

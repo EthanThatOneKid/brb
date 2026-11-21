@@ -1,0 +1,10 @@
+{
+  "name": "brb",
+  "version": "0.1.0",
+  "description": "Put a message on your OBS camera from the terminal.",
+  "type": "module",
+  "bin": { "brb": "dist/brb.js" },
+  "engines": { "node": ">=22" },
+  "repository": { "type": "git", "url": "git+https://github.com/EthanThatOneKid/brb.git" },
+  "keywords": ["obs", "obs-studio", "virtual-camera", "cli", "websocket"]
+}
