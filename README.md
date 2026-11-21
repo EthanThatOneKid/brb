@@ -150,3 +150,6 @@ You only need [Deno](https://deno.com) (for its fmt/lint/test tooling) and Node 
   small in-process obs-websocket v5 server, so they run without OBS. Each CLI test runs twice: the source on Deno and
   the shipped bundle on Node.
 - `deno task brb ...` runs the source directly.
+- CI (`.github/workflows/ci.yml`) runs the same tasks on every push and PR: format, lint, typecheck, a check that the
+  committed `dist/brb.js` matches a fresh build, and the tests on Linux and Windows with Node 22 and 24. `main` is
+  protected: changes land through a pull request once all five jobs are green.
