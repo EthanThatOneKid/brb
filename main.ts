@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { parseArgs } from "node:util";
-import { cam, hide, setup, show, status, type Target } from "./commands.ts";
+import { cam, hide, setup, show, status, stop, type Target } from "./commands.ts";
 import { loadConfig } from "./config.ts";
 import { buildMessage, parseDuration } from "./format.ts";
 import { ObsClient } from "./obs.ts";
@@ -15,6 +15,7 @@ Usage:
   brb off                 take the message off camera (also: clear, hide)
   brb setup               add the text source to the current scene (once per scene)
   brb cam on|off          start/stop the OBS virtual camera
+  brb stop                hide the message, stop the virtual camera, and release the webcam (light off)
   brb status              what viewers see right now
 
 Options:
@@ -35,7 +36,7 @@ Colors stick in OBS until you change them again (e.g. brb --color white --bg bla
 Use \`brb -- off\` to show the literal message "off". A \\n in a message is a line break.
 OBS needs Tools > WebSocket Server Settings > Enable WebSocket server.`;
 
-const COMMANDS = new Set(["off", "clear", "hide", "setup", "cam", "status", "help"]);
+const COMMANDS = new Set(["off", "clear", "hide", "setup", "cam", "status", "stop", "help"]);
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -104,6 +105,9 @@ async function main(): Promise<void> {
         break;
       case "status":
         result = await status(obs, target);
+        break;
+      case "stop":
+        result = await stop(obs, target);
         break;
       default:
         result = await show(obs, target, message!, { startCamera: !values["no-cam"] && config.cam !== false, style });

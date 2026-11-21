@@ -46,6 +46,29 @@ export interface ShowOptions {
   style?: Style;
 }
 
+/** Camera capture source kinds (Windows, macOS, macOS, Linux). Only DirectShow has the `active` toggle we use. */
+const CAMERA_KINDS = ["dshow_input", "av_capture_input", "av_capture_input_v2", "v4l2_input"];
+
+/**
+ * Activates or deactivates (releases) every webcam source, which is what turns the camera light off or on.
+ * Only writes when the state actually differs, since re-applying settings can make the device blink.
+ * Returns how many sources changed.
+ */
+async function setCameras(obs: Obs, active: boolean): Promise<number> {
+  const { inputs } = await obs.request<{ inputs: { inputName: string; inputKind: string }[] }>("GetInputList");
+  let changed = 0;
+  for (const { inputName, inputKind } of inputs) {
+    if (!CAMERA_KINDS.includes(inputKind)) continue;
+    const { inputSettings } = await obs.request<{ inputSettings: { active?: boolean } }>("GetInputSettings", {
+      inputName,
+    });
+    if ((inputSettings.active ?? true) === active) continue;
+    await obs.request("SetInputSettings", { inputName, inputSettings: { active }, overlay: true });
+    changed++;
+  }
+  return changed;
+}
+
 /** Puts `text` on camera, starting the virtual camera first unless `options.startCamera` is false. */
 export async function show(obs: Obs, target: Target, text: string, options: ShowOptions = {}): Promise<string> {
   const { startCamera = true, style = {} } = options;
@@ -60,14 +83,18 @@ export async function show(obs: Obs, target: Target, text: string, options: Show
   await obs.request("SetInputSettings", { inputName: target.source, inputSettings, overlay: true });
   await obs.request("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: true });
   let started = false;
+  let woke = 0;
   if (startCamera) {
+    woke = await setCameras(obs, true);
     const { outputActive } = await obs.request<{ outputActive: boolean }>("GetVirtualCamStatus");
     if (!outputActive) {
       await obs.request("StartVirtualCam");
       started = true;
     }
   }
-  return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}${started ? " (started virtual camera)" : ""}`;
+  return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}${started ? " (started virtual camera)" : ""}${
+    woke ? " (reactivated camera)" : ""
+  }`;
 }
 
 /** Takes the message off camera. */
@@ -145,9 +172,23 @@ export async function setup(obs: Obs, target: Target, style: Style = {}): Promis
 /** Starts or stops the OBS virtual camera. */
 export async function cam(obs: Obs, state: "on" | "off"): Promise<string> {
   const { outputActive } = await obs.request<{ outputActive: boolean }>("GetVirtualCamStatus");
+  if (state === "on") await setCameras(obs, true);
   if (state === "on" && !outputActive) await obs.request("StartVirtualCam");
   if (state === "off" && outputActive) await obs.request("StopVirtualCam");
   return `Virtual camera ${state}.`;
+}
+
+/** Hides the message, stops the virtual camera, and releases the webcam so its light goes off. */
+export async function stop(obs: Obs, target: Target): Promise<string> {
+  const scene = await sceneOf(obs, target);
+  const sceneItemId = await findItem(obs, scene, target.source);
+  if (sceneItemId !== undefined) {
+    await obs.request("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: false });
+  }
+  const { outputActive } = await obs.request<{ outputActive: boolean }>("GetVirtualCamStatus");
+  if (outputActive) await obs.request("StopVirtualCam");
+  const released = await setCameras(obs, false);
+  return `Stopped: message hidden, virtual camera off, ${released} camera source${released === 1 ? "" : "s"} released.`;
 }
 
 /** One-line summary of what viewers see right now. */

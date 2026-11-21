@@ -55,6 +55,7 @@ For background on OBS's WebSocket server, see the official
 | `brb off` (`clear`, `hide`)      | Hide the message                                                                              |
 | `brb setup`                      | Add the text source to the current scene                                                      |
 | `brb cam on\|off`                | Start/stop the virtual camera                                                                 |
+| `brb stop`                       | Hide the message, stop the virtual camera, and release the webcam (light off)                 |
 | `brb status`                     | What viewers see right now                                                                    |
 | `brb -- off`                     | Show the literal message "off"                                                                |
 
@@ -143,16 +144,18 @@ Don't flip the camera in OBS to "fix" it: that would make your tile look normal 
 ### Why is my camera light still on?
 
 Because OBS still has your webcam open, and `brb off` only hides the text. OBS keeps the camera running for as long as
-an active scene contains it, and the virtual camera being on keeps it that way. Stopping the virtual camera alone
-doesn't release the webcam while that scene is still active.
+an active scene contains it, and stopping the virtual camera alone doesn't release it.
 
-To turn the light off, do any of these, from least to most thorough:
+Run **`brb stop`**. It hides the message, stops the virtual camera, and releases the webcam in one go. The next
+`brb "..."` turns everything back on (use `--no-cam` to show a message without waking the camera).
 
-1. `brb cam off` stops the virtual camera. Your call app shows the OBS logo again.
-2. Switch OBS to a scene that doesn't include your webcam. To make OBS release the webcam automatically whenever it
+`brb stop` releases webcams that OBS exposes an on/off switch for, which today means DirectShow cameras on Windows. If
+the light is still on, or you're on macOS/Linux, do it by hand:
+
+1. Switch OBS to a scene that doesn't include your webcam. To make OBS release the webcam automatically whenever it
    isn't on screen, open the camera source's properties (double-click _Video Capture Device_) and tick **Deactivate when
    not showing**.
-3. Quit OBS. This is the sure way, since nothing else is holding the camera.
+2. Quit OBS. This is the sure way, since nothing else is holding the camera.
 
 If the light is still on after quitting OBS, another app (a browser tab, a call app) has the camera open.
 
