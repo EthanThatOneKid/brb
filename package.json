@@ -2,6 +2,7 @@
   "name": "brb",
   "version": "0.1.0",
   "description": "Put a message on your OBS camera from the terminal.",
+  "license": "MIT",
   "type": "module",
   "bin": { "brb": "dist/brb.js" },
   "files": ["dist/brb.js"],

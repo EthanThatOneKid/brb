@@ -187,6 +187,17 @@ function defineTests(runtime: Runtime) {
     assertEquals(obs.state.virtualCam, true);
   });
 
+  Deno.test(`${runtime.name}: --version prints the package version without needing OBS`, async () => {
+    const { version } = JSON.parse(Deno.readTextFileSync(new URL("./package.json", import.meta.url)));
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    for (const flag of ["--version", "-v"]) {
+      const result = await brb(obs, flag);
+      assertEquals(result.code, 0);
+      assertEquals(result.out.trim(), version);
+    }
+    assertEquals(Object.keys(obs.state.inputs), []);
+  });
+
   Deno.test(`${runtime.name}: stop works in a scene that was never set up`, async () => {
     await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
     const result = await brb(obs, "stop");

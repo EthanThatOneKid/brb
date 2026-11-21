@@ -37,6 +37,9 @@ For background on OBS's WebSocket server, see the official
    ```
 
    or install the short `brb` command once: `npm install -g github:EthanThatOneKid/brb`. The examples below assume that.
+
+   Both follow the latest `main`. To pin a release, add its tag, for example `npx github:EthanThatOneKid/brb#v0.1.0`
+   (see the [releases](https://github.com/EthanThatOneKid/brb/releases)). `brb --version` prints the installed version.
 4. In OBS, make a scene that contains your camera (a **Video Capture Device** source) and make it the active scene. Then
    run `brb setup`. It adds a hidden text source named `brb-status` (white bold text on a dark box, lower-center).
    Repeat once per scene you want it in, or pass `--scene`.
@@ -57,6 +60,7 @@ For background on OBS's WebSocket server, see the official
 | `brb cam on\|off`                | Start/stop the virtual camera                                                                 |
 | `brb stop`                       | Hide the message, stop the virtual camera, and release the webcam (light off)                 |
 | `brb status`                     | What viewers see right now                                                                    |
+| `brb --version` (`-v`)           | Print the installed version                                                                   |
 | `brb -- off`                     | Show the literal message "off"                                                                |
 
 ## Colors
@@ -159,6 +163,24 @@ the light is still on, or you're on macOS/Linux, do it by hand:
 
 If the light is still on after quitting OBS, another app (a browser tab, a call app) has the camera open.
 
+## Known limits
+
+What `brb` does not do, or has not been verified to do:
+
+- **Tested by hand on Windows only.** CI runs the CLI against a fake OBS on Linux and Windows, but nothing has been run
+  against a real OBS on macOS or Linux. The FreeType2 text source (no background box) and the non-DirectShow camera
+  kinds are untested.
+- **`brb stop` can't always turn the camera light off.** It releases DirectShow webcams (Windows) by switching the OBS
+  source off. It doesn't release other camera kinds, and it can't free a camera that another app (a browser tab, a call
+  app) is holding. The light going off is not something `brb` can confirm.
+- **`brb stop` does not quit OBS.** OBS's WebSocket API has no quit request, and force-closing OBS could cut a recording
+  or stream. Quit it yourself when you want it gone.
+- **Menu paths are from memory** and may differ by app version: Google Meet's camera picker, and the _Deactivate when
+  not showing_ checkbox in OBS's camera properties.
+- **Windows Hello's IR camera** (the separate "IR camera" on many laptops) has its own light, which OBS can't control.
+- **Only the text overlay is managed.** `brb` doesn't create your camera scene or choose your resolution; set those up
+  in OBS (see [the FAQ](#why-doesnt-my-meeting-show-the-text)).
+
 ## Development
 
 You only need [Deno](https://deno.com) (for its fmt/lint/test tooling) and Node to work on `brb`. Users need only Node.
@@ -172,3 +194,7 @@ You only need [Deno](https://deno.com) (for its fmt/lint/test tooling) and Node 
 - CI (`.github/workflows/ci.yml`) runs the same tasks on every push and PR: format, lint, typecheck, a check that the
   committed `dist/brb.js` matches a fresh build, and the tests on Linux and Windows with Node 22 and 24. `main` is
   protected: changes land through a pull request once all five jobs are green.
+
+## License
+
+[MIT](LICENSE)
