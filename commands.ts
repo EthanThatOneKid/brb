@@ -1,4 +1,5 @@
 import { ObsRequestError, ResourceNotFound } from "./obs.ts";
+import { isEmptyStyle, type Style, styleSettings } from "./style.ts";
 
 /** The slice of ObsClient the commands use (lets tests pass a fake). */
 export interface Obs {
@@ -38,12 +39,25 @@ async function findItem(obs: Obs, scene: string, source: string): Promise<number
   }
 }
 
-/** Puts `text` on camera, starting the virtual camera first unless `startCamera` is false. */
-export async function show(obs: Obs, target: Target, text: string, startCamera = true): Promise<string> {
+export interface ShowOptions {
+  /** Start the virtual camera if it is off. Defaults to true. */
+  startCamera?: boolean;
+  /** Text/background colors. They stick in OBS until changed again. */
+  style?: Style;
+}
+
+/** Puts `text` on camera, starting the virtual camera first unless `options.startCamera` is false. */
+export async function show(obs: Obs, target: Target, text: string, options: ShowOptions = {}): Promise<string> {
+  const { startCamera = true, style = {} } = options;
   const scene = await sceneOf(obs, target);
   const sceneItemId = await findItem(obs, scene, target.source);
   if (sceneItemId === undefined) throw new Error(SETUP_HINT(target, scene));
-  await obs.request("SetInputSettings", { inputName: target.source, inputSettings: { text }, overlay: true });
+  let inputSettings: Record<string, unknown> = { text };
+  if (!isEmptyStyle(style)) {
+    const { inputKind } = await obs.request<{ inputKind: string }>("GetInputSettings", { inputName: target.source });
+    inputSettings = { text, ...styleSettings(inputKind, style) };
+  }
+  await obs.request("SetInputSettings", { inputName: target.source, inputSettings, overlay: true });
   await obs.request("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: true });
   let started = false;
   if (startCamera) {
@@ -66,7 +80,7 @@ export async function hide(obs: Obs, target: Target): Promise<string> {
 }
 
 /** Creates the text source (if needed) and adds it, hidden and centered low, to the scene. */
-export async function setup(obs: Obs, target: Target): Promise<string> {
+export async function setup(obs: Obs, target: Target, style: Style = {}): Promise<string> {
   const scene = await sceneOf(obs, target);
   if (await findItem(obs, scene, target.source) !== undefined) {
     return `"${target.source}" is already in scene "${scene}". Nothing to do.`;
@@ -86,6 +100,7 @@ export async function setup(obs: Obs, target: Target): Promise<string> {
       bk_opacity: 70,
     }
     : { text: "Be right back", font: { face: "Sans Serif", style: "Bold", size: 64, flags: 1 } };
+  Object.assign(settings, styleSettings(kind, style));
 
   let sceneItemId: number;
   let exists = true;
@@ -96,6 +111,13 @@ export async function setup(obs: Obs, target: Target): Promise<string> {
     exists = false;
   }
   if (exists) {
+    if (!isEmptyStyle(style)) {
+      await obs.request("SetInputSettings", {
+        inputName: target.source,
+        inputSettings: styleSettings(kind, style),
+        overlay: true,
+      });
+    }
     ({ sceneItemId } = await obs.request<{ sceneItemId: number }>("CreateSceneItem", {
       sceneName: scene,
       sourceName: target.source,

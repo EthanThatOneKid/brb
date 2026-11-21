@@ -21,16 +21,32 @@ brb off                         # message gone
 
 ## Commands
 
-| Command                     | What it does                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------- |
-| `brb [message...]`          | Show a message (default "Be right back"); starts the virtual camera if off. `\n` = line break |
-| `brb ... --in 5m`           | Append "Back at <time>" (`5`, `5m`, `90s`, `1h30m`; bare = min)                               |
-| `brb ... --no-cam`          | Show without auto-starting the virtual camera                                                 |
-| `brb off` (`clear`, `hide`) | Hide the message                                                                              |
-| `brb setup`                 | Add the text source to the current scene                                                      |
-| `brb cam on\|off`           | Start/stop the virtual camera                                                                 |
-| `brb status`                | What viewers see right now                                                                    |
-| `brb -- off`                | Show the literal message "off"                                                                |
+| Command                          | What it does                                                                                  |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
+| `brb [message...]`               | Show a message (default "Be right back"); starts the virtual camera if off. `\n` = line break |
+| `brb ... --in 5m`                | Append "Back at <time>" (`5`, `5m`, `90s`, `1h30m`; bare = min)                               |
+| `brb ... --no-cam`               | Show without auto-starting the virtual camera                                                 |
+| `brb ... --color red --bg black` | Set text and background colors (see [Colors](#colors))                                        |
+| `brb off` (`clear`, `hide`)      | Hide the message                                                                              |
+| `brb setup`                      | Add the text source to the current scene                                                      |
+| `brb cam on\|off`                | Start/stop the virtual camera                                                                 |
+| `brb status`                     | What viewers see right now                                                                    |
+| `brb -- off`                     | Show the literal message "off"                                                                |
+
+## Colors
+
+```sh
+brb "heads down" --color white --bg "#1e3a8a"   # white text on a blue box
+brb "stepping away" --color yellow --bg none      # no box
+brb "back soon" --bg black --bg-opacity 100       # solid box
+```
+
+- `--color` and `--bg` take a name (`white black red green lime blue yellow orange purple pink cyan magenta gray`) or
+  hex (`#ff8800`, `#f80`, or `ff8800`; quote `#` colors, since shells treat a bare `#` as a comment).
+- `--bg none` removes the box. `--bg-opacity` is 0-100 and defaults to 70 when you set `--bg`.
+- Styles **stick**: they're saved on the OBS source, so later `brb` calls keep them. Restore the defaults with
+  `brb --color white --bg black --bg-opacity 70 "..."`. `brb setup` accepts the same flags for the initial look.
+- On a FreeType2 text source (macOS/Linux) there is no background box, so only `--color` works.
 
 ## Config
 

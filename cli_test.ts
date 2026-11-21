@@ -46,3 +46,27 @@ Deno.test("showing a message starts the virtual camera by default; --no-cam opts
   assertEquals(obs.state.inputs["brb-status"].text, "off");
   assertEquals(obs.state.items[0].enabled, true);
 });
+
+Deno.test("--color / --bg / --bg-opacity restyle the source and stick", async () => {
+  await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+  await brb(obs, "setup", "--color", "yellow", "--bg", "#000000", "--bg-opacity", "90");
+  assertEquals(obs.state.inputs["brb-status"].color, 0xFF00FFFF);
+  assertEquals(obs.state.inputs["brb-status"].bk_color, 0xFF000000);
+  assertEquals(obs.state.inputs["brb-status"].bk_opacity, 90);
+
+  const result = await brb(obs, "hello", "--color", "red", "--bg", "white", "--no-cam");
+  assertEquals(result.code, 0);
+  assertEquals(obs.state.inputs["brb-status"].color, 0xFF0000FF);
+  assertEquals(obs.state.inputs["brb-status"].bk_color, 0xFFFFFFFF);
+  assertEquals(obs.state.inputs["brb-status"].bk_opacity, 70);
+
+  await brb(obs, "no box", "--bg", "none", "--no-cam");
+  assertEquals(obs.state.inputs["brb-status"].bk_opacity, 0);
+  assertEquals(obs.state.inputs["brb-status"].color, 0xFF0000FF); // untouched
+
+  // Bad colors fail before anything changes.
+  const bad = await brb(obs, "oops", "--color", "chartreuse-ish", "--no-cam");
+  assertEquals(bad.code, 1);
+  assertStringIncludes(bad.err, "Can't parse color");
+  assertEquals(obs.state.inputs["brb-status"].text, "no box");
+});

@@ -31,7 +31,7 @@ Deno.test("end to end against a fake OBS with authentication", async () => {
     assertEquals(obs.state.items[0].enabled, false);
     assertEquals(obs.state.items[0].transform, { positionX: 960, positionY: 918, alignment: 0 });
 
-    await show(client, target, "grabbing coffee\nBack at 2:35 PM", true);
+    await show(client, target, "grabbing coffee\nBack at 2:35 PM", { startCamera: true });
     assertEquals(obs.state.inputs["brb-status"].text, "grabbing coffee\nBack at 2:35 PM");
     assertEquals(obs.state.items[0].enabled, true);
     assertEquals(obs.state.virtualCam, true);
