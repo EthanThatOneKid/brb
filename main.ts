@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { parseArgs } from "node:util";
+import pkg from "./package.json" with { type: "json" };
 import { cam, hide, setup, show, status, stop, type Target } from "./commands.ts";
 import { loadConfig } from "./config.ts";
 import { buildMessage, parseDuration } from "./format.ts";
@@ -29,6 +30,7 @@ Options:
       --url <ws-url>      OBS WebSocket URL (default: ws://127.0.0.1:4455, env OBS_WEBSOCKET_URL)
       --password <pw>     OBS WebSocket password (env OBS_WEBSOCKET_PASSWORD)
       --config <path>     JSON file of flag defaults (default: ./brb.json, then ~/.config/brb/brb.json)
+  -v, --version
   -h, --help
 
 Flags beat env vars, which beat the config file. The password is never read from the config file.
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
       password: { type: "string" },
       config: { type: "string" },
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "v" },
     },
   });
 
@@ -63,6 +66,11 @@ async function main(): Promise<void> {
   const forcedMessage = args.includes("--");
   const [first, ...rest] = positionals;
   const command = !forcedMessage && first && COMMANDS.has(first) ? first : undefined;
+
+  if (values.version) {
+    console.log(pkg.version);
+    return;
+  }
 
   if (values.help || command === "help") {
     console.log(HELP);

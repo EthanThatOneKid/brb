@@ -4,6 +4,20 @@
 import process from "node:process";
 import { parseArgs } from "node:util";
 
+// package.json
+var package_default = {
+  name: "brb",
+  version: "0.1.0",
+  description: "Put a message on your OBS camera from the terminal.",
+  license: "MIT",
+  type: "module",
+  bin: { brb: "dist/brb.js" },
+  files: ["dist/brb.js"],
+  engines: { node: ">=22" },
+  repository: { type: "git", url: "git+https://github.com/EthanThatOneKid/brb.git" },
+  keywords: ["obs", "obs-studio", "virtual-camera", "cli", "websocket"]
+};
+
 // obs.ts
 var ObsRequestError = class extends Error {
   requestType;
@@ -552,6 +566,7 @@ Options:
       --url <ws-url>      OBS WebSocket URL (default: ws://127.0.0.1:4455, env OBS_WEBSOCKET_URL)
       --password <pw>     OBS WebSocket password (env OBS_WEBSOCKET_PASSWORD)
       --config <path>     JSON file of flag defaults (default: ./brb.json, then ~/.config/brb/brb.json)
+  -v, --version
   -h, --help
 
 Flags beat env vars, which beat the config file. The password is never read from the config file.
@@ -612,12 +627,20 @@ async function main() {
       help: {
         type: "boolean",
         short: "h"
+      },
+      version: {
+        type: "boolean",
+        short: "v"
       }
     }
   });
   const forcedMessage = args.includes("--");
   const [first, ...rest] = positionals;
   const command = !forcedMessage && first && COMMANDS.has(first) ? first : void 0;
+  if (values.version) {
+    console.log(package_default.version);
+    return;
+  }
   if (values.help || command === "help") {
     console.log(HELP);
     return;
