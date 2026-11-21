@@ -43,6 +43,16 @@ brb off                         # message gone
 
 Prefer the env var over `--password`, which lands in your shell history.
 
+## FAQ
+
+### My message (and I) look mirrored in the call. Is `brb` flipping my camera?
+
+No. `brb` and OBS send the correct, unflipped picture. Meet, Zoom and most other call apps mirror only your own
+self-view, like a bathroom mirror, and send everyone else the real stream. Your tile shows reversed text; other people
+read it normally. To check, ask someone in the call, or join from your phone and look at your tile.
+
+Don't flip the camera in OBS to "fix" it: that would make your tile look normal but send everyone else a flipped you.
+
 ## Development
 
 `deno task check` runs fmt, lint, type-check, and tests. The tests drive the real client and commands against
