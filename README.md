@@ -1,7 +1,11 @@
 # brb
 
-Put a message on your camera from the terminal. Talks to [OBS](https://obsproject.com) over its built-in WebSocket
-server, so anything that uses the **OBS Virtual Camera** (Meet, Zoom, Discord, ...) shows it.
+Put a message on your camera from the terminal.
+
+`brb` is a small command-line tool that sits **on top of [OBS Studio](https://obsproject.com)**. It doesn't capture
+video or create a camera itself. It remote-controls OBS (over OBS's built-in WebSocket server) to change a text overlay,
+and OBS's own **Virtual Camera** carries your picture into Meet, Zoom, Discord, and anything else that uses a camera. So
+you need OBS installed and running.
 
 ```sh
 brb "grabbing coffee" --in 5m   # "grabbing coffee / Back at 2:35 PM" on camera
@@ -9,15 +13,29 @@ brb                             # "Be right back"
 brb off                         # message gone
 ```
 
+## Requirements
+
+- **OBS Studio 28 or newer** (the WebSocket server is built in). Install it from official sources only:
+  - Download: <https://obsproject.com/download>
+  - Source and releases: <https://github.com/obsproject/obs-studio>
+  - Linux (Flatpak): <https://flathub.org/apps/com.obsproject.Studio>
+  - Windows (winget, published by OBS Project): `winget install OBSProject.OBSStudio`
+- [Deno](https://deno.com) to install and run `brb`.
+
+For background on OBS's WebSocket server, see the official
+[remote control guide](https://obsproject.com/kb/remote-control-guide).
+
 ## One-time setup
 
 1. In OBS: **Tools → WebSocket Server Settings → Enable WebSocket server**. Set a password and copy it.
 2. Export it: `OBS_WEBSOCKET_PASSWORD=...` (see [Config](#config)).
-3. Install: `deno task install` (needs [Deno](https://deno.com)), or run `deno run -A main.ts ...` directly.
-4. With your scene active in OBS, run `brb setup`. It adds a hidden text source named `brb-status` (white bold text on a
-   dark box, lower-center). Repeat once per scene you want it in, or pass `--scene`.
-5. Pick "OBS Virtual Camera" in your call app. `brb` starts the virtual camera for you when it shows a message (or click
-   **Start Virtual Camera** in OBS, or `brb cam on`). Without it running, apps show the OBS logo.
+3. Clone this repo and run `deno task install`, or run `deno run -A main.ts ...` directly.
+4. In OBS, make a scene that contains your camera (a **Video Capture Device** source) and make it the active scene. Then
+   run `brb setup`. It adds a hidden text source named `brb-status` (white bold text on a dark box, lower-center).
+   Repeat once per scene you want it in, or pass `--scene`.
+5. In your call app, choose **OBS Virtual Camera** as the camera (see [the FAQ](#why-doesnt-my-meeting-show-the-text)).
+   `brb` starts the virtual camera for you when it shows a message, or click **Start Virtual Camera** in OBS, or run
+   `brb cam on`.
 
 ## Commands
 
@@ -50,16 +68,62 @@ brb "back soon" --bg black --bg-opacity 100       # solid box
 
 ## Config
 
-| Env                      | Flag         | Default                |
-| ------------------------ | ------------ | ---------------------- |
-| `OBS_WEBSOCKET_PASSWORD` | `--password` | none (required by OBS) |
-| `OBS_WEBSOCKET_URL`      | `--url`      | `ws://127.0.0.1:4455`  |
-| `BRB_SOURCE`             | `--source`   | `brb-status`           |
-|                          | `--scene`    | current program scene  |
+Settings resolve in this order, first match wins: **flag → env var → `brb.json` → default**.
+
+| Setting            | Flag           | Env                      | `brb.json` key | Default                |
+| ------------------ | -------------- | ------------------------ | -------------- | ---------------------- |
+| OBS password       | `--password`   | `OBS_WEBSOCKET_PASSWORD` | not allowed    | none (required by OBS) |
+| WebSocket URL      | `--url`        | `OBS_WEBSOCKET_URL`      | `url`          | `ws://127.0.0.1:4455`  |
+| Text source name   | `--source`     | `BRB_SOURCE`             | `source`       | `brb-status`           |
+| Scene              | `--scene`      |                          | `scene`        | current program scene  |
+| Message (no words) |                |                          | `message`      | `Be right back`        |
+| Text color         | `--color`      |                          | `color`        | OBS source's own       |
+| Background color   | `--bg`         |                          | `bg`           | OBS source's own       |
+| Background opacity | `--bg-opacity` |                          | `bgOpacity`    | 70 when `--bg` is set  |
+| Start virtual cam  | `--no-cam`     |                          | `cam`          | `true`                 |
 
 Prefer the env var over `--password`, which lands in your shell history.
 
+### `brb.json`: share your setup
+
+Put a `brb.json` in a project folder (or in `~/.config/brb/brb.json` for everywhere) to share flag defaults with
+teammates. `brb` uses the first file it finds: `--config <path>`, else `./brb.json`, else `~/.config/brb/brb.json`.
+
+```json
+{
+  "message": "In a meeting, back soon",
+  "color": "white",
+  "bg": "#1e3a8a",
+  "bgOpacity": 80,
+  "cam": true
+}
+```
+
+- The file is checked on every run: unknown keys, wrong types, and invalid JSON are errors, so typos don't pass quietly.
+- **The OBS password can't go in it.** The file is meant to be committed and shared, so `brb` refuses a `password` key.
+  Use `OBS_WEBSOCKET_PASSWORD`.
+- If it sets `color`/`bg`, that look is re-applied on every message, so everyone using the file gets the same style.
+- Skip `scene` in a shared file unless everyone names their scenes the same.
+
 ## FAQ
+
+### Why doesn't my meeting show the text?
+
+Because your call app is still using your regular webcam, and `brb` only changes what **OBS** sends. In the call app,
+switch the camera to **OBS Virtual Camera**. In Google Meet, that's **⋮ → Settings → Video → Camera** (or the arrow next
+to the camera button during a call). Zoom, Teams, and Discord have the same dropdown in their video settings. You may
+need to reselect it after OBS restarts.
+
+Still nothing? Check what you see:
+
+- **The OBS logo:** the virtual camera isn't running. `brb` starts it unless you used `--no-cam` or `"cam": false`.
+  `brb status` should say "virtual camera on".
+- **Your desktop, or the wrong picture:** the active OBS scene decides what's sent. Switch OBS to the scene you ran
+  `brb setup` in, and make sure it has your camera in it.
+- **A blank white or black frame:** OBS's camera source needs a resolution. Double-click _Video Capture Device_ in OBS,
+  set **Resolution/FPS Type** to _Custom_, pick something like 1280x720, and close any other app using the webcam.
+- **Your picture but no text:** run `brb status`. "message hidden" means run `brb "..."`; "no brb-status source" means
+  run `brb setup` in that scene.
 
 ### My message (and I) look mirrored in the call. Is `brb` flipping my camera?
 

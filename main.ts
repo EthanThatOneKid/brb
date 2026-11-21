@@ -1,6 +1,7 @@
 #!/usr/bin/env -S deno run -A
 import { parseArgs } from "node:util";
 import { cam, hide, setup, show, status, type Target } from "./commands.ts";
+import { loadConfig } from "./config.ts";
 import { buildMessage, parseDuration } from "./format.ts";
 import { ObsClient } from "./obs.ts";
 import { styleFromFlags } from "./style.ts";
@@ -25,8 +26,10 @@ Options:
       --source <name>     text source name (default: brb-status, env BRB_SOURCE)
       --url <ws-url>      OBS WebSocket URL (default: ws://127.0.0.1:4455, env OBS_WEBSOCKET_URL)
       --password <pw>     OBS WebSocket password (env OBS_WEBSOCKET_PASSWORD)
+      --config <path>     JSON file of flag defaults (default: ./brb.json, then ~/.config/brb/brb.json)
   -h, --help
 
+Flags beat env vars, which beat the config file. The password is never read from the config file.
 Colors stick in OBS until you change them again (e.g. brb --color white --bg black).
 Use \`brb -- off\` to show the literal message "off". A \\n in a message is a line break.
 OBS needs Tools > WebSocket Server Settings > Enable WebSocket server.`;
@@ -47,6 +50,7 @@ async function main(): Promise<void> {
       source: { type: "string" },
       url: { type: "string" },
       password: { type: "string" },
+      config: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -62,17 +66,23 @@ async function main(): Promise<void> {
   }
 
   // Validate before touching the network.
+  const home = Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE");
+  const config = loadConfig(values.config, Deno.cwd().replaceAll("\\", "/"), home?.replaceAll("\\", "/"));
   const backInMs = values.in === undefined ? undefined : parseDuration(values.in);
   if (command === "cam" && rest[0] !== "on" && rest[0] !== "off") throw new Error("Usage: brb cam on|off");
-  const style = styleFromFlags({ color: values.color, bg: values.bg, "bg-opacity": values["bg-opacity"] });
-  const message = command ? undefined : buildMessage(positionals, backInMs);
+  const style = styleFromFlags({
+    color: values.color ?? config.color,
+    bg: values.bg ?? config.bg,
+    "bg-opacity": values["bg-opacity"] ?? (config.bgOpacity === undefined ? undefined : String(config.bgOpacity)),
+  });
+  const message = command ? undefined : buildMessage(positionals, backInMs, new Date(), config.message);
 
   const target: Target = {
-    source: values.source ?? Deno.env.get("BRB_SOURCE") ?? "brb-status",
-    scene: values.scene,
+    source: values.source ?? Deno.env.get("BRB_SOURCE") ?? config.source ?? "brb-status",
+    scene: values.scene ?? config.scene,
   };
   const obs = await ObsClient.connect({
-    url: values.url ?? Deno.env.get("OBS_WEBSOCKET_URL") ?? "ws://127.0.0.1:4455",
+    url: values.url ?? Deno.env.get("OBS_WEBSOCKET_URL") ?? config.url ?? "ws://127.0.0.1:4455",
     password: values.password ?? Deno.env.get("OBS_WEBSOCKET_PASSWORD"),
   });
   try {
@@ -93,7 +103,7 @@ async function main(): Promise<void> {
         result = await status(obs, target);
         break;
       default:
-        result = await show(obs, target, message!, { startCamera: !values["no-cam"], style });
+        result = await show(obs, target, message!, { startCamera: !values["no-cam"] && config.cam !== false, style });
     }
     console.log(result);
   } finally {

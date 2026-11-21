@@ -16,8 +16,13 @@ export function formatClock(date: Date): string {
 export const DEFAULT_MESSAGE = "Be right back";
 
 /** Turns CLI words into the text shown on camera. A literal `\n` becomes a line break. */
-export function buildMessage(words: string[], backInMs?: number, now = new Date()): string {
-  const base = (words.join(" ").trim() || DEFAULT_MESSAGE).replaceAll("\\n", "\n");
+export function buildMessage(
+  words: string[],
+  backInMs?: number,
+  now = new Date(),
+  fallback = DEFAULT_MESSAGE,
+): string {
+  const base = (words.join(" ").trim() || fallback).replaceAll("\\n", "\n");
   if (backInMs === undefined) return base;
   return `${base}\nBack at ${formatClock(new Date(now.getTime() + backInMs))}`;
 }
