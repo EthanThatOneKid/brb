@@ -6,6 +6,7 @@ import { cam, hide, setup, show, status, stop, type Target } from "./commands.ts
 import { loadConfig } from "./config.ts";
 import { buildMessage, parseDuration } from "./format.ts";
 import { ObsClient } from "./obs.ts";
+import { closeObs, prepareQuit } from "./quit.ts";
 import { styleFromFlags } from "./style.ts";
 
 const HELP = `brb: put a message on your OBS camera from the terminal.
@@ -17,10 +18,12 @@ Usage:
   brb setup               add the text source to the current scene (once per scene)
   brb cam on|off          start/stop the OBS virtual camera
   brb stop                hide the message, stop the virtual camera, and release the webcam (light off)
+  brb stop --quit-obs     ...and then close OBS (local only; refuses while recording or streaming)
   brb status              what viewers see right now
 
 Options:
   -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes)
+      --quit-obs          with the stop command: also close OBS, after checking it is not recording or streaming
       --no-cam            don't auto-start the virtual camera (showing a message starts it by default)
       --color <color>     text color: a name (white, red, ...) or hex ("#ff8800" or ff8800)
       --bg <color|none>   background box color, or "none" for no box
@@ -48,6 +51,7 @@ async function main(): Promise<void> {
     options: {
       in: { type: "string", short: "i" },
       "no-cam": { type: "boolean" },
+      "quit-obs": { type: "boolean" },
       cam: { type: "boolean" }, // accepted for compatibility; starting the camera is now the default
       color: { type: "string" },
       bg: { type: "string" },
@@ -82,6 +86,9 @@ async function main(): Promise<void> {
   const config = loadConfig(values.config, process.cwd().replaceAll("\\", "/"), home?.replaceAll("\\", "/"));
   const backInMs = values.in === undefined ? undefined : parseDuration(values.in);
   if (command === "cam" && rest[0] !== "on" && rest[0] !== "off") throw new Error("Usage: brb cam on|off");
+  if (values["quit-obs"] && command !== "stop") {
+    throw new Error("--quit-obs only works with the stop command: brb stop --quit-obs.");
+  }
   const style = styleFromFlags({
     color: values.color ?? config.color,
     bg: values.bg ?? config.bg,
@@ -93,8 +100,9 @@ async function main(): Promise<void> {
     source: values.source ?? process.env.BRB_SOURCE ?? config.source ?? "brb-status",
     scene: values.scene ?? config.scene,
   };
+  const obsUrl = values.url ?? process.env.OBS_WEBSOCKET_URL ?? config.url ?? "ws://127.0.0.1:4455";
   const obs = await ObsClient.connect({
-    url: values.url ?? process.env.OBS_WEBSOCKET_URL ?? config.url ?? "ws://127.0.0.1:4455",
+    url: obsUrl,
     password: values.password ?? process.env.OBS_WEBSOCKET_PASSWORD,
   });
   try {
@@ -114,9 +122,16 @@ async function main(): Promise<void> {
       case "status":
         result = await status(obs, target);
         break;
-      case "stop":
+      case "stop": {
+        // Vet everything before changing anything, so a refusal leaves OBS exactly as it was.
+        const obsPid = values["quit-obs"] ? await prepareQuit(obs, obsUrl) : undefined;
         result = await stop(obs, target);
+        if (obsPid !== undefined) {
+          obs.close();
+          result += `\n${await closeObs(obsPid)}`;
+        }
         break;
+      }
       default:
         result = await show(obs, target, message!, { startCamera: !values["no-cam"] && config.cam !== false, style });
     }

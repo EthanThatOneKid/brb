@@ -59,6 +59,7 @@ For background on OBS's WebSocket server, see the official
 | `brb setup`                      | Add the text source to the current scene                                                      |
 | `brb cam on\|off`                | Start/stop the virtual camera                                                                 |
 | `brb stop`                       | Hide the message, stop the virtual camera, and release the webcam (light off)                 |
+| `brb stop --quit-obs`            | Also close OBS (local only; refuses while recording or streaming)                             |
 | `brb status`                     | What viewers see right now                                                                    |
 | `brb --version` (`-v`)           | Print the installed version                                                                   |
 | `brb -- off`                     | Show the literal message "off"                                                                |
@@ -159,7 +160,7 @@ the light is still on, or you're on macOS/Linux, do it by hand:
 1. Switch OBS to a scene that doesn't include your webcam. To make OBS release the webcam automatically whenever it
    isn't on screen, open the camera source's properties (double-click _Video Capture Device_) and tick **Deactivate when
    not showing**.
-2. Quit OBS. This is the sure way, since nothing else is holding the camera.
+2. Quit OBS, which is the sure way to free the camera from OBS: run `brb stop --quit-obs`, or close it yourself.
 
 If the light is still on after quitting OBS, another app (a browser tab, a call app) has the camera open.
 
@@ -173,8 +174,12 @@ What `brb` does not do, or has not been verified to do:
 - **`brb stop` can't always turn the camera light off.** It releases DirectShow webcams (Windows) by switching the OBS
   source off. It doesn't release other camera kinds, and it can't free a camera that another app (a browser tab, a call
   app) is holding. The light going off is not something `brb` can confirm.
-- **`brb stop` does not quit OBS.** OBS's WebSocket API has no quit request, and force-closing OBS could cut a recording
-  or stream. Quit it yourself when you want it gone.
+- **`brb stop` leaves OBS running unless you add `--quit-obs`.** OBS's WebSocket API has no quit request, so
+  `--quit-obs` closes the process through the OS: it only works on the machine running OBS, and it asks OBS to close
+  like clicking the X (never a force-kill). It refuses, before changing anything, if OBS is recording, streaming, or
+  running the replay buffer, or if the process listening on the WebSocket port isn't OBS. If OBS shows a dialog (for
+  example, unsaved settings) it may stay open, and `brb` says so. Verified on Windows only; macOS and Linux use `lsof`
+  and `SIGTERM` and are untested.
 - **Menu paths are from memory** and may differ by app version: Google Meet's camera picker, and the _Deactivate when
   not showing_ checkbox in OBS's camera properties.
 - **Windows Hello's IR camera** (the separate "IR camera" on many laptops) has its own light, which OBS can't control.
