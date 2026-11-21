@@ -140,6 +140,22 @@ read it normally. To check, ask someone in the call, or join from your phone and
 
 Don't flip the camera in OBS to "fix" it: that would make your tile look normal but send everyone else a flipped you.
 
+### Why is my camera light still on?
+
+Because OBS still has your webcam open, and `brb off` only hides the text. OBS keeps the camera running for as long as
+an active scene contains it, and the virtual camera being on keeps it that way. Stopping the virtual camera alone
+doesn't release the webcam while that scene is still active.
+
+To turn the light off, do any of these, from least to most thorough:
+
+1. `brb cam off` stops the virtual camera. Your call app shows the OBS logo again.
+2. Switch OBS to a scene that doesn't include your webcam. To make OBS release the webcam automatically whenever it
+   isn't on screen, open the camera source's properties (double-click _Video Capture Device_) and tick **Deactivate when
+   not showing**.
+3. Quit OBS. This is the sure way, since nothing else is holding the camera.
+
+If the light is still on after quitting OBS, another app (a browser tab, a call app) has the camera open.
+
 ## Development
 
 You only need [Deno](https://deno.com) (for its fmt/lint/test tooling) and Node to work on `brb`. Users need only Node.
