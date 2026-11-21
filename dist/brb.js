@@ -248,6 +248,32 @@ async function findItem(obs, scene, source) {
     throw error;
   }
 }
+var CAMERA_KINDS = [
+  "dshow_input",
+  "av_capture_input",
+  "av_capture_input_v2",
+  "v4l2_input"
+];
+async function setCameras(obs, active) {
+  const { inputs } = await obs.request("GetInputList");
+  let changed = 0;
+  for (const { inputName, inputKind } of inputs) {
+    if (!CAMERA_KINDS.includes(inputKind)) continue;
+    const { inputSettings } = await obs.request("GetInputSettings", {
+      inputName
+    });
+    if ((inputSettings.active ?? true) === active) continue;
+    await obs.request("SetInputSettings", {
+      inputName,
+      inputSettings: {
+        active
+      },
+      overlay: true
+    });
+    changed++;
+  }
+  return changed;
+}
 async function show(obs, target, text, options = {}) {
   const { startCamera = true, style = {} } = options;
   const scene = await sceneOf(obs, target);
@@ -276,14 +302,16 @@ async function show(obs, target, text, options = {}) {
     sceneItemEnabled: true
   });
   let started = false;
+  let woke = 0;
   if (startCamera) {
+    woke = await setCameras(obs, true);
     const { outputActive } = await obs.request("GetVirtualCamStatus");
     if (!outputActive) {
       await obs.request("StartVirtualCam");
       started = true;
     }
   }
-  return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}${started ? " (started virtual camera)" : ""}`;
+  return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}${started ? " (started virtual camera)" : ""}${woke ? " (reactivated camera)" : ""}`;
 }
 async function hide(obs, target) {
   const scene = await sceneOf(obs, target);
@@ -374,9 +402,25 @@ async function setup(obs, target, style = {}) {
 }
 async function cam(obs, state) {
   const { outputActive } = await obs.request("GetVirtualCamStatus");
+  if (state === "on") await setCameras(obs, true);
   if (state === "on" && !outputActive) await obs.request("StartVirtualCam");
   if (state === "off" && outputActive) await obs.request("StopVirtualCam");
   return `Virtual camera ${state}.`;
+}
+async function stop(obs, target) {
+  const scene = await sceneOf(obs, target);
+  const sceneItemId = await findItem(obs, scene, target.source);
+  if (sceneItemId !== void 0) {
+    await obs.request("SetSceneItemEnabled", {
+      sceneName: scene,
+      sceneItemId,
+      sceneItemEnabled: false
+    });
+  }
+  const { outputActive } = await obs.request("GetVirtualCamStatus");
+  if (outputActive) await obs.request("StopVirtualCam");
+  const released = await setCameras(obs, false);
+  return `Stopped: message hidden, virtual camera off, ${released} camera source${released === 1 ? "" : "s"} released.`;
 }
 async function status(obs, target) {
   const scene = await sceneOf(obs, target);
@@ -494,6 +538,7 @@ Usage:
   brb off                 take the message off camera (also: clear, hide)
   brb setup               add the text source to the current scene (once per scene)
   brb cam on|off          start/stop the OBS virtual camera
+  brb stop                hide the message, stop the virtual camera, and release the webcam (light off)
   brb status              what viewers see right now
 
 Options:
@@ -520,6 +565,7 @@ var COMMANDS = /* @__PURE__ */ new Set([
   "setup",
   "cam",
   "status",
+  "stop",
   "help"
 ]);
 async function main() {
@@ -610,6 +656,9 @@ async function main() {
         break;
       case "status":
         result = await status(obs, target);
+        break;
+      case "stop":
+        result = await stop(obs, target);
         break;
       default:
         result = await show(obs, target, message, {

@@ -16,6 +16,8 @@ export class FakeObs implements AsyncDisposable {
     inputs: {} as Record<string, Json>,
     items: [] as Item[],
     virtualCam: false,
+    /** Input kinds by name; anything not listed is a text source. */
+    kinds: {} as Record<string, string>,
     current: "",
   };
   #server: Deno.HttpServer;
@@ -86,12 +88,19 @@ export class FakeObs implements AsyncDisposable {
         if (!item) throw new Error("No scene items were found.");
         return { sceneItemId: item.id };
       }
+      case "GetInputList":
+        return {
+          inputs: Object.keys(s.inputs).map((inputName) => ({
+            inputName,
+            inputKind: s.kinds[inputName] ?? "text_gdiplus_v3",
+          })),
+        };
       case "GetInputKindList":
         return { inputKinds: ["text_gdiplus_v3", "color_source_v3"] };
       case "GetInputSettings": {
         const input = s.inputs[data.inputName as string];
         if (!input) throw new Error("No input was found.");
-        return { inputSettings: input, inputKind: "text_gdiplus_v3" };
+        return { inputSettings: input, inputKind: s.kinds[data.inputName as string] ?? "text_gdiplus_v3" };
       }
       case "SetInputSettings": {
         const input = s.inputs[data.inputName as string];

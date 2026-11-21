@@ -151,6 +151,48 @@ function defineTests(runtime: Runtime) {
     assertStringIncludes(result.err, "OBS_WEBSOCKET_PASSWORD");
     assertEquals(Object.keys(obs.state.inputs), []);
   });
+  Deno.test(`${runtime.name}: stop releases the webcam, and showing a message wakes it again`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    await brb(obs, "setup");
+    obs.state.inputs["Webcam"] = {}; // a DirectShow webcam that has never been toggled
+    obs.state.kinds["Webcam"] = "dshow_input";
+
+    // Showing a message with a healthy camera must not rewrite the camera's settings (it could blink the light).
+    await brb(obs, "hi");
+    assertEquals(obs.state.virtualCam, true);
+    assertEquals("active" in obs.state.inputs["Webcam"], false);
+
+    const stopped = await brb(obs, "stop");
+    assertEquals(stopped.code, 0);
+    assertStringIncludes(stopped.out, "1 camera source released");
+    assertEquals(obs.state.items[0].enabled, false);
+    assertEquals(obs.state.virtualCam, false);
+    assertEquals(obs.state.inputs["Webcam"].active, false);
+
+    // Already stopped: nothing left to release.
+    assertStringIncludes((await brb(obs, "stop")).out, "0 camera sources released");
+
+    // --no-cam leaves the webcam released; a normal message reactivates it and says so.
+    await brb(obs, "quiet", "--no-cam");
+    assertEquals(obs.state.inputs["Webcam"].active, false);
+    const woke = await brb(obs, "back");
+    assertStringIncludes(woke.out, "reactivated camera");
+    assertEquals(obs.state.inputs["Webcam"].active, true);
+    assertEquals(obs.state.virtualCam, true);
+
+    // `cam on` wakes it too.
+    await brb(obs, "stop");
+    await brb(obs, "cam", "on");
+    assertEquals(obs.state.inputs["Webcam"].active, true);
+    assertEquals(obs.state.virtualCam, true);
+  });
+
+  Deno.test(`${runtime.name}: stop works in a scene that was never set up`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    const result = await brb(obs, "stop");
+    assertEquals(result.code, 0);
+    assertStringIncludes(result.out, "virtual camera off");
+  });
 }
 
 for (const runtime of RUNTIMES) defineTests(runtime);
