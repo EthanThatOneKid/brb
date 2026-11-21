@@ -2,8 +2,12 @@
   "tasks": {
     "brb": "deno run -A main.ts",
     "build": "deno run -A scripts/build.ts",
-    "install": "deno task build && npm install -g .",
-    "check": "deno task build && deno fmt --check && deno lint && deno check *.ts scripts/*.ts && deno test -A"
+    "build:verify": "deno task build && git diff --exit-code -- dist/brb.js",
+    "fmt:check": "deno fmt --check",
+    "lint": "deno lint",
+    "typecheck": "deno check --frozen *.ts scripts/*.ts",
+    "test": "deno test -A --frozen",
+    "check": "deno task build && deno task fmt:check && deno task lint && deno task typecheck && deno task test"
   },
   "imports": { "@std/assert": "jsr:@std/assert@1" },
   "fmt": { "lineWidth": 120 },
