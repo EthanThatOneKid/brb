@@ -8,7 +8,7 @@ and OBS's own **Virtual Camera** carries your picture into Meet, Zoom, Discord, 
 you need OBS installed and running.
 
 ```sh
-brb "grabbing coffee" --in 5m   # "grabbing coffee / Back at 2:35 PM" on camera
+brb "grabbing coffee" --in 5m   # "grabbing coffee / Back at 2:35 PM" on camera, cleared at 2:35
 brb                             # "Be right back"
 brb off                         # message gone
 ```
@@ -49,20 +49,20 @@ For background on OBS's WebSocket server, see the official
 
 ## Commands
 
-| Command                          | What it does                                                                                  |
-| -------------------------------- | --------------------------------------------------------------------------------------------- |
-| `brb [message...]`               | Show a message (default "Be right back"); starts the virtual camera if off. `\n` = line break |
-| `brb ... --in 5m`                | Append "Back at <time>" (`5`, `5m`, `90s`, `1h30m`; bare = min)                               |
-| `brb ... --no-cam`               | Show without auto-starting the virtual camera                                                 |
-| `brb ... --color red --bg black` | Set text and background colors (see [Colors](#colors))                                        |
-| `brb off` (`clear`, `hide`)      | Hide the message                                                                              |
-| `brb setup`                      | Add the text source to the current scene                                                      |
-| `brb cam on\|off`                | Start/stop the virtual camera                                                                 |
-| `brb stop`                       | Hide the message, stop the virtual camera, and release the webcam (light off)                 |
-| `brb stop --quit-obs`            | Also close OBS (local only; refuses while recording or streaming)                             |
-| `brb status`                     | What viewers see right now                                                                    |
-| `brb --version` (`-v`)           | Print the installed version                                                                   |
-| `brb -- off`                     | Show the literal message "off"                                                                |
+| Command                          | What it does                                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `brb [message...]`               | Show a message (default "Be right back"); starts the virtual camera if off. `\n` = line break      |
+| `brb ... --in 5m`                | Append "Back at <time>", then clear it when the time is up (`5`, `5m`, `90s`, `1h30m`; bare = min) |
+| `brb ... --no-cam`               | Show without auto-starting the virtual camera                                                      |
+| `brb ... --color red --bg black` | Set text and background colors (see [Colors](#colors))                                             |
+| `brb off` (`clear`, `hide`)      | Hide the message                                                                                   |
+| `brb setup`                      | Add the text source to the current scene                                                           |
+| `brb cam on\|off`                | Start/stop the virtual camera                                                                      |
+| `brb stop`                       | Hide the message, stop the virtual camera, and release the webcam (light off)                      |
+| `brb stop --quit-obs`            | Also close OBS (local only; refuses while recording or streaming)                                  |
+| `brb status`                     | What viewers see right now                                                                         |
+| `brb --version` (`-v`)           | Print the installed version                                                                        |
+| `brb -- off`                     | Show the literal message "off"                                                                     |
 
 ## Colors
 

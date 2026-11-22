@@ -2,7 +2,7 @@
 import process from "node:process";
 import { parseArgs } from "node:util";
 import pkg from "./package.json" with { type: "json" };
-import { cam, hide, setup, show, status, stop, type Target } from "./commands.ts";
+import { cam, hide, hideIfShowing, setup, show, status, stop, type Target } from "./commands.ts";
 import { loadConfig } from "./config.ts";
 import { buildMessage, parseDuration } from "./format.ts";
 import { ObsClient } from "./obs.ts";
@@ -13,7 +13,7 @@ const HELP = `brb: put a message on your OBS camera from the terminal.
 
 Usage:
   brb [message...]        show a message (default: "Be right back")
-  brb "grabbing coffee" --in 5m   ...and append "Back at <time>"
+  brb "grabbing coffee" --in 5m   ...append "Back at <time>", then clear it when the time is up (stays running; Ctrl-C leaves it up)
   brb off                 take the message off camera (also: clear, hide)
   brb setup               add the text source to the current scene (once per scene)
   brb cam on|off          start/stop the OBS virtual camera
@@ -22,7 +22,7 @@ Usage:
   brb status              what viewers see right now
 
 Options:
-  -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes)
+  -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes); shows "Back at <time>" and auto-clears then
       --quit-obs          with the stop command: also close OBS, after checking it is not recording or streaming
       --no-cam            don't auto-start the virtual camera (showing a message starts it by default)
       --color <color>     text color: a name (white, red, ...) or hex ("#ff8800" or ff8800)
@@ -138,6 +138,21 @@ async function main(): Promise<void> {
     console.log(result);
   } finally {
     obs.close();
+  }
+
+  // `--in` is a timer, not just a label: wait out the clock, then take our message off camera.
+  if (!command && backInMs !== undefined) {
+    console.log("Waiting to clear it (Ctrl-C to leave it up; `brb off` clears it any time)...");
+    await new Promise((resolve) => setTimeout(resolve, backInMs));
+    const later = await ObsClient.connect({
+      url: obsUrl,
+      password: values.password ?? process.env.OBS_WEBSOCKET_PASSWORD,
+    });
+    try {
+      console.log(await hideIfShowing(later, target, message!));
+    } finally {
+      later.close();
+    }
   }
 }
 

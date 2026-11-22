@@ -78,6 +78,35 @@ function defineTests(runtime: Runtime) {
     assertEquals(obs.state.items[0].enabled, true);
   });
 
+  Deno.test(`${runtime.name}: --in waits out the clock, then clears the message`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    await brb(obs, "setup");
+    const result = await brb(obs, "back soon", "--in", "1s", "--no-cam");
+    assertEquals(result.code, 0);
+    assertStringIncludes(result.out, "Showing");
+    assertStringIncludes(result.out, "cleared");
+    assertEquals(obs.state.items[0].enabled, false);
+  });
+
+  Deno.test(`${runtime.name}: an expired --in timer leaves a newer message alone`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    await brb(obs, "setup");
+    const timed = new Deno.Command(runtime.command, {
+      args: [...runtime.args, "--url", obs.url, "--password", "hunter2", "old news", "--in", "2s", "--no-cam"],
+      env: { HOME: EMPTY_HOME },
+      stdout: "piped",
+      stderr: "piped",
+    }).spawn();
+    // Wait until the timed message is on camera, then replace it before the timer fires.
+    while (!obs.state.items[0]?.enabled) await new Promise((resolve) => setTimeout(resolve, 50));
+    await brb(obs, "newer message", "--no-cam");
+    const { code, stdout } = await timed.output();
+    assertEquals(code, 0);
+    assertStringIncludes(new TextDecoder().decode(stdout), "already changed");
+    assertEquals(obs.state.items[0].enabled, true);
+    assertEquals(obs.state.inputs["brb-status"].text, "newer message");
+  });
+
   Deno.test(`${runtime.name}: --color / --bg / --bg-opacity restyle the source and stick`, async () => {
     await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
     await brb(obs, "setup", "--color", "yellow", "--bg", "#000000", "--bg-opacity", "90");
