@@ -338,6 +338,27 @@ async function hide(obs, target) {
   });
   return `Cleared "${scene}".`;
 }
+async function hideIfShowing(obs, target, expected) {
+  const scene = await sceneOf(obs, target);
+  const sceneItemId = await findItem(obs, scene, target.source);
+  if (sceneItemId === void 0) return `Timer done; "${target.source}" is no longer in scene "${scene}".`;
+  const { sceneItemEnabled } = await obs.request("GetSceneItemEnabled", {
+    sceneName: scene,
+    sceneItemId
+  });
+  const { inputSettings } = await obs.request("GetInputSettings", {
+    inputName: target.source
+  });
+  if (!sceneItemEnabled || inputSettings.text !== expected) {
+    return `Timer done; left "${scene}" alone because the message had already changed.`;
+  }
+  await obs.request("SetSceneItemEnabled", {
+    sceneName: scene,
+    sceneItemId,
+    sceneItemEnabled: false
+  });
+  return `Timer done; cleared "${scene}".`;
+}
 async function setup(obs, target, style = {}) {
   const scene = await sceneOf(obs, target);
   if (await findItem(obs, scene, target.source) !== void 0) {
@@ -692,7 +713,7 @@ var HELP = `brb: put a message on your OBS camera from the terminal.
 
 Usage:
   brb [message...]        show a message (default: "Be right back")
-  brb "grabbing coffee" --in 5m   ...and append "Back at <time>"
+  brb "grabbing coffee" --in 5m   ...append "Back at <time>", then clear it when the time is up (stays running; Ctrl-C leaves it up)
   brb off                 take the message off camera (also: clear, hide)
   brb setup               add the text source to the current scene (once per scene)
   brb cam on|off          start/stop the OBS virtual camera
@@ -701,7 +722,7 @@ Usage:
   brb status              what viewers see right now
 
 Options:
-  -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes)
+  -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes); shows "Back at <time>" and auto-clears then
       --quit-obs          with the stop command: also close OBS, after checking it is not recording or streaming
       --no-cam            don't auto-start the virtual camera (showing a message starts it by default)
       --color <color>     text color: a name (white, red, ...) or hex ("#ff8800" or ff8800)
@@ -852,6 +873,19 @@ ${await closeObs(obsPid)}`;
     console.log(result);
   } finally {
     obs.close();
+  }
+  if (!command && backInMs !== void 0) {
+    console.log("Waiting to clear it (Ctrl-C to leave it up; `brb off` clears it any time)...");
+    await new Promise((resolve) => setTimeout(resolve, backInMs));
+    const later = await ObsClient.connect({
+      url: obsUrl,
+      password: values.password ?? process2.env.OBS_WEBSOCKET_PASSWORD
+    });
+    try {
+      console.log(await hideIfShowing(later, target, message));
+    } finally {
+      later.close();
+    }
   }
 }
 try {

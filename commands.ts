@@ -106,6 +106,28 @@ export async function hide(obs: Obs, target: Target): Promise<string> {
   return `Cleared "${scene}".`;
 }
 
+/**
+ * Hides the message only if `expected` is still what's on camera, so an expired `--in` timer never wipes a newer
+ * message (or one that was already cleared). Returns what happened.
+ */
+export async function hideIfShowing(obs: Obs, target: Target, expected: string): Promise<string> {
+  const scene = await sceneOf(obs, target);
+  const sceneItemId = await findItem(obs, scene, target.source);
+  if (sceneItemId === undefined) return `Timer done; "${target.source}" is no longer in scene "${scene}".`;
+  const { sceneItemEnabled } = await obs.request<{ sceneItemEnabled: boolean }>("GetSceneItemEnabled", {
+    sceneName: scene,
+    sceneItemId,
+  });
+  const { inputSettings } = await obs.request<{ inputSettings: { text?: string } }>("GetInputSettings", {
+    inputName: target.source,
+  });
+  if (!sceneItemEnabled || inputSettings.text !== expected) {
+    return `Timer done; left "${scene}" alone because the message had already changed.`;
+  }
+  await obs.request("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: false });
+  return `Timer done; cleared "${scene}".`;
+}
+
 /** Creates the text source (if needed) and adds it, hidden and centered low, to the scene. */
 export async function setup(obs: Obs, target: Target, style: Style = {}): Promise<string> {
   const scene = await sceneOf(obs, target);
