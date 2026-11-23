@@ -22,19 +22,30 @@ export class FakeObs implements AsyncDisposable {
     /** Input kinds by name; anything not listed is a text source. */
     kinds: {} as Record<string, string>,
     current: "",
+    /** Video size per webcam source. Missing means 0x0: no frames, like a webcam OBS hasn't really started. */
+    sizes: {} as Record<string, [number, number]>,
+    /** Webcams that never deliver frames even when activated (e.g. another app has the device). */
+    stuck: new Set<string>(),
+    /** Every properties button pressed, as "input:property". */
+    pressed: [] as string[],
   };
   #server: Deno.HttpServer;
   readonly url: string;
+
+  /** The port the server is listening on. */
+  get port(): number {
+    return Number(new URL(this.url).port);
+  }
 
   private constructor(readonly options: { password?: string }, server: Deno.HttpServer, port: number) {
     this.#server = server;
     this.url = `ws://127.0.0.1:${port}`;
   }
 
-  static start(options: { password?: string; scenes: string[]; current: string }): Promise<FakeObs> {
+  static start(options: { password?: string; scenes: string[]; current: string; port?: number }): Promise<FakeObs> {
     // deno-lint-ignore prefer-const
     let fake: FakeObs;
-    const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen: () => {} }, (req) => {
+    const server = Deno.serve({ hostname: "127.0.0.1", port: options.port ?? 0, onListen: () => {} }, (req) => {
       const { socket, response } = Deno.upgradeWebSocket(req, { protocol: "obswebsocket.json" });
       socket.onopen = () => fake.#hello(socket);
       return response;
@@ -109,6 +120,33 @@ export class FakeObs implements AsyncDisposable {
         const input = s.inputs[data.inputName as string];
         if (!input) throw new Error("No input was found.");
         Object.assign(input, data.inputSettings);
+        // Like OBS: releasing a webcam drops its frames, but setting `active` back to true does NOT restart it.
+        if (data.inputSettings && (data.inputSettings as Json).active === false) {
+          delete s.sizes[data.inputName as string];
+        }
+        return;
+      }
+      case "GetSceneItemList":
+        return {
+          sceneItems: s.items.filter((i) => i.scene === data.sceneName).map((i) => {
+            const [w, h] = s.sizes[i.source] ?? [0, 0];
+            return {
+              sceneItemId: i.id,
+              sourceName: i.source,
+              inputKind: s.kinds[i.source] ?? "text_gdiplus_v3",
+              sceneItemEnabled: i.enabled,
+              sceneItemTransform: { sourceWidth: w, sourceHeight: h },
+            };
+          }),
+        };
+      case "PressInputPropertiesButton": {
+        const name = data.inputName as string;
+        if (!s.inputs[name]) throw new Error("No input was found.");
+        if (s.kinds[name] !== "dshow_input" || data.propertyName !== "activate") {
+          throw new Error("Unable to find a property by that name.");
+        }
+        s.pressed.push(`${name}:${data.propertyName}`);
+        if (!s.stuck.has(name)) s.sizes[name] = [1280, 720];
         return;
       }
       case "CreateInput": {

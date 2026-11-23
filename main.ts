@@ -5,6 +5,7 @@ import pkg from "./package.json" with { type: "json" };
 import { cam, hide, hideIfShowing, setup, show, status, stop, type Target } from "./commands.ts";
 import { loadConfig } from "./config.ts";
 import { buildMessage, parseDuration } from "./format.ts";
+import { connectLaunching, readObsPassword, resolveLaunch, spawnObs } from "./launch.ts";
 import { ObsClient } from "./obs.ts";
 import { closeObs, prepareQuit } from "./quit.ts";
 import { styleFromFlags } from "./style.ts";
@@ -16,7 +17,7 @@ Usage:
   brb "grabbing coffee" --in 5m   ...append "Back at <time>", then clear it when the time is up (stays running; Ctrl-C leaves it up)
   brb off                 take the message off camera (also: clear, hide)
   brb setup               add the text source to the current scene (once per scene)
-  brb cam on|off          start/stop the OBS virtual camera
+  brb cam on|off          start/stop the OBS virtual camera (on also wakes a webcam that has no video)
   brb stop                hide the message, stop the virtual camera, and release the webcam (light off)
   brb stop --quit-obs     ...and then close OBS (local only; refuses while recording or streaming)
   brb status              what viewers see right now
@@ -25,6 +26,8 @@ Options:
   -i, --in <duration>     5, 5m, 90s, 1h30m (a bare number is minutes); shows "Back at <time>" and auto-clears then
       --quit-obs          with the stop command: also close OBS, after checking it is not recording or streaming
       --no-cam            don't auto-start the virtual camera (showing a message starts it by default)
+      --no-launch         don't start OBS when it isn't running (message, setup, and cam on start it by default)
+      --read-obs-password take the WebSocket password from OBS's own settings when none is given
       --color <color>     text color: a name (white, red, ...) or hex ("#ff8800" or ff8800)
       --bg <color|none>   background box color, or "none" for no box
       --bg-opacity <0-100>  background box opacity (default 70 when --bg is set)
@@ -51,6 +54,8 @@ async function main(): Promise<void> {
     options: {
       in: { type: "string", short: "i" },
       "no-cam": { type: "boolean" },
+      "no-launch": { type: "boolean" },
+      "read-obs-password": { type: "boolean" },
       "quit-obs": { type: "boolean" },
       cam: { type: "boolean" }, // accepted for compatibility; starting the camera is now the default
       color: { type: "string" },
@@ -101,9 +106,17 @@ async function main(): Promise<void> {
     scene: values.scene ?? config.scene,
   };
   const obsUrl = values.url ?? process.env.OBS_WEBSOCKET_URL ?? config.url ?? "ws://127.0.0.1:4455";
-  const obs = await ObsClient.connect({
-    url: obsUrl,
-    password: values.password ?? process.env.OBS_WEBSOCKET_PASSWORD,
+  const password = values.password ?? process.env.OBS_WEBSOCKET_PASSWORD ??
+    (values["read-obs-password"] || config.readObsPassword
+      ? readObsPassword(process.platform, process.env, home)
+      : undefined);
+  // Starting OBS only makes sense for commands that need it running to do their job.
+  const needsObs = !command || command === "setup" || (command === "cam" && rest[0] === "on");
+  const obsPath = process.env.BRB_OBS_PATH ?? config.obsPath;
+  const obs = await connectLaunching({ url: obsUrl, password }, {
+    launch: needsObs && !values["no-launch"] && config.launch !== false,
+    start: () => spawnObs(resolveLaunch(process.platform, process.env, obsPath)),
+    onLaunch: () => console.log("OBS isn't running; starting it..."),
   });
   try {
     let result: string;
@@ -117,7 +130,7 @@ async function main(): Promise<void> {
         result = await setup(obs, target, style);
         break;
       case "cam":
-        result = await cam(obs, rest[0] as "on" | "off");
+        result = await cam(obs, rest[0] as "on" | "off", target);
         break;
       case "status":
         result = await status(obs, target);
@@ -144,10 +157,7 @@ async function main(): Promise<void> {
   if (!command && backInMs !== undefined) {
     console.log("Waiting to clear it (Ctrl-C to leave it up; `brb off` clears it any time)...");
     await new Promise((resolve) => setTimeout(resolve, backInMs));
-    const later = await ObsClient.connect({
-      url: obsUrl,
-      password: values.password ?? process.env.OBS_WEBSOCKET_PASSWORD,
-    });
+    const later = await ObsClient.connect({ url: obsUrl, password });
     try {
       console.log(await hideIfShowing(later, target, message!));
     } finally {

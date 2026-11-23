@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertMatch, assertStringIncludes } from "@std/assert";
 import { fileURLToPath } from "node:url";
 import { FakeObs } from "./fake_obs.ts";
 
@@ -105,6 +105,82 @@ function defineTests(runtime: Runtime) {
     assertStringIncludes(new TextDecoder().decode(stdout), "already changed");
     assertEquals(obs.state.items[0].enabled, true);
     assertEquals(obs.state.inputs["brb-status"].text, "newer message");
+  });
+
+  Deno.test(`${runtime.name}: cam on and showing a message wake a webcam that has no video`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    await brb(obs, "setup");
+    obs.state.inputs["Webcam"] = {};
+    obs.state.kinds["Webcam"] = "dshow_input";
+    obs.state.items.push({ id: 2, scene: "Main", source: "Webcam", enabled: true });
+    obs.state.sizes["Webcam"] = [1280, 720]; // a healthy camera
+
+    // A camera that already has video is left completely alone.
+    const healthy = await brb(obs, "cam", "on");
+    assertEquals(healthy.out.trim(), "Virtual camera on.");
+    assertEquals(obs.state.pressed, []);
+
+    // After stop, setting `active` back to true alone does not bring frames back (as in real OBS),
+    // so brb has to press Activate.
+    await brb(obs, "stop");
+    assertEquals(obs.state.sizes["Webcam"], undefined);
+    const woke = await brb(obs, "cam", "on");
+    assertEquals(woke.code, 0);
+    assertEquals(woke.out.includes("warning"), false);
+    assertEquals(obs.state.pressed, ["Webcam:activate"]);
+    assertEquals(obs.state.sizes["Webcam"], [1280, 720]);
+
+    // Same on the message path.
+    await brb(obs, "stop");
+    const shown = await brb(obs, "back soon");
+    assertEquals(shown.out.includes("warning"), false);
+    assertEquals(obs.state.pressed, ["Webcam:activate", "Webcam:activate"]);
+    assertEquals(obs.state.sizes["Webcam"], [1280, 720]);
+  });
+
+  Deno.test(`${runtime.name}: a webcam that never delivers video is reported, not hidden`, async () => {
+    await using obs = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main" });
+    await brb(obs, "setup");
+    obs.state.inputs["Webcam"] = {};
+    obs.state.kinds["Webcam"] = "dshow_input";
+    obs.state.items.push({ id: 2, scene: "Main", source: "Webcam", enabled: true });
+    obs.state.stuck.add("Webcam"); // e.g. another app has the device
+
+    const shown = await brb(obs, "hi");
+    assertEquals(shown.code, 0);
+    assertEquals(obs.state.inputs["brb-status"].text, "hi");
+    assertStringIncludes(shown.out, 'warning: "Webcam" still has no video');
+    const camOn = await brb(obs, "cam", "on");
+    assertStringIncludes(camOn.out, 'warning: "Webcam" still has no video');
+  });
+
+  Deno.test(`${runtime.name}: nothing listening: --no-launch fails fast, and off/status/stop never start OBS`, async () => {
+    const closed = await FakeObs.start({ scenes: ["Main"], current: "Main" });
+    const url = closed.url;
+    await closed[Symbol.asyncDispose](); // the port is now closed
+    const run = async (...args: string[]) => {
+      const { code, stdout, stderr } = await new Deno.Command(runtime.command, {
+        args: [...runtime.args, "--url", url, ...args],
+        // If brb tried to start OBS it would fail loudly: this path doesn't exist.
+        env: { HOME: EMPTY_HOME, BRB_OBS_PATH: "/definitely/not/obs" },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+      return { code, out: decode(stdout), err: decode(stderr) };
+    };
+    for (const args of [["hi", "--no-launch"], ["off"], ["status"], ["stop"], ["cam", "off"]]) {
+      const result = await run(...args);
+      assertEquals(result.code, 1, args.join(" "));
+      assertStringIncludes(result.err, "Could not connect to OBS", args.join(" "));
+      assertEquals(result.out.includes("starting it"), false, args.join(" "));
+    }
+
+    // Without --no-launch a message tries to start OBS, and says why it couldn't.
+    const tried = await run("hi");
+    assertEquals(tried.code, 1);
+    assertStringIncludes(tried.out, "OBS isn't running; starting it");
+    assertMatch(tried.err, /Can't find OBS|Couldn't start OBS/);
   });
 
   Deno.test(`${runtime.name}: --color / --bg / --bg-opacity restyle the source and stick`, async () => {

@@ -69,6 +69,58 @@ async function setCameras(obs: Obs, active: boolean): Promise<number> {
   return changed;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Webcam sources in the scene that report no video size, i.e. that aren't actually delivering frames. */
+async function darkCameras(obs: Obs, scene: string): Promise<{ name: string; kind: string }[]> {
+  const { sceneItems } = await obs.request<{
+    sceneItems: {
+      sourceName: string;
+      inputKind?: string | null;
+      sceneItemTransform?: { sourceWidth?: number; sourceHeight?: number };
+    }[];
+  }>("GetSceneItemList", { sceneName: scene });
+  return sceneItems
+    .filter((item) => item.inputKind && CAMERA_KINDS.includes(item.inputKind))
+    .filter((item) => !item.sceneItemTransform?.sourceWidth || !item.sceneItemTransform?.sourceHeight)
+    .map((item) => ({ name: item.sourceName, kind: item.inputKind! }));
+}
+
+export interface WakeOptions {
+  /** How long to wait for video after pressing Activate. Default 3000. */
+  waitMs?: number;
+}
+
+/**
+ * Setting a webcam's `active` flag doesn't restart the device: after a fresh OBS launch it can read "active" while
+ * sending no frames (a 0x0 source), so the virtual camera is black. For each webcam in the scene that has no video,
+ * this presses the source's own Activate button (DirectShow), then waits for frames. Healthy cameras are never
+ * touched. Returns the names of cameras that still have no video.
+ */
+export async function wakeCameras(obs: Obs, scene: string, options: WakeOptions = {}): Promise<string[]> {
+  const { waitMs = 3000 } = options;
+  let dark = await darkCameras(obs, scene);
+  if (dark.length === 0) return [];
+  for (const { name, kind } of dark) {
+    if (kind !== "dshow_input") continue;
+    try {
+      await obs.request("PressInputPropertiesButton", { inputName: name, propertyName: "activate" });
+    } catch (error) {
+      if (!(error instanceof ObsRequestError && error.code === ResourceNotFound)) throw error;
+    }
+  }
+  for (let waited = 0; waited < waitMs && dark.length > 0; waited += 250) {
+    await sleep(250);
+    dark = await darkCameras(obs, scene);
+  }
+  return dark.map(({ name }) => name);
+}
+
+const noVideoWarning = (names: string[]) =>
+  `warning: ${names.map((n) => `"${n}"`).join(", ")} still ${
+    names.length === 1 ? "has" : "have"
+  } no video (is another app using the webcam?)`;
+
 /** Puts `text` on camera, starting the virtual camera first unless `options.startCamera` is false. */
 export async function show(obs: Obs, target: Target, text: string, options: ShowOptions = {}): Promise<string> {
   const { startCamera = true, style = {} } = options;
@@ -84,6 +136,7 @@ export async function show(obs: Obs, target: Target, text: string, options: Show
   await obs.request("SetSceneItemEnabled", { sceneName: scene, sceneItemId, sceneItemEnabled: true });
   let started = false;
   let woke = 0;
+  let dark: string[] = [];
   if (startCamera) {
     woke = await setCameras(obs, true);
     const { outputActive } = await obs.request<{ outputActive: boolean }>("GetVirtualCamStatus");
@@ -91,10 +144,11 @@ export async function show(obs: Obs, target: Target, text: string, options: Show
       await obs.request("StartVirtualCam");
       started = true;
     }
+    dark = await wakeCameras(obs, scene);
   }
   return `Showing on "${scene}": ${text.replaceAll("\n", " / ")}${started ? " (started virtual camera)" : ""}${
     woke ? " (reactivated camera)" : ""
-  }`;
+  }${dark.length ? `\n${noVideoWarning(dark)}` : ""}`;
 }
 
 /** Takes the message off camera. */
@@ -191,12 +245,16 @@ export async function setup(obs: Obs, target: Target, style: Style = {}): Promis
   return `Added "${target.source}" (${kind}) to scene "${scene}", hidden. Try: brb "back in 5"`;
 }
 
-/** Starts or stops the OBS virtual camera. */
-export async function cam(obs: Obs, state: "on" | "off"): Promise<string> {
+/** Starts or stops the OBS virtual camera. Turning it on also wakes any webcam in the scene that has no video. */
+export async function cam(obs: Obs, state: "on" | "off", target?: Target): Promise<string> {
   const { outputActive } = await obs.request<{ outputActive: boolean }>("GetVirtualCamStatus");
   if (state === "on") await setCameras(obs, true);
   if (state === "on" && !outputActive) await obs.request("StartVirtualCam");
   if (state === "off" && outputActive) await obs.request("StopVirtualCam");
+  if (state === "on" && target) {
+    const dark = await wakeCameras(obs, await sceneOf(obs, target));
+    if (dark.length) return `Virtual camera on.\n${noVideoWarning(dark)}`;
+  }
   return `Virtual camera ${state}.`;
 }
 
