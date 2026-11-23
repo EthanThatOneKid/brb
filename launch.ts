@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { posix, win32 } from "node:path";
-import { type ConnectOptions, ObsClient, ObsUnreachableError } from "./obs.ts";
+import { type ConnectOptions, NotReady, ObsClient, ObsRequestError, ObsUnreachableError } from "./obs.ts";
 
 /** How to start OBS on this machine. */
 export interface LaunchCommand {
@@ -54,22 +54,51 @@ export function spawnObs(launch: LaunchCommand): Promise<void> {
       );
       return;
     }
-    const child = spawn(launch.command, launch.args, {
-      cwd: launch.cwd,
-      detached: true,
+    const run = detachedCommand(launch, process.platform);
+    // Not detached when going through PowerShell: without a console, `Start-Process` silently starts nothing.
+    const child = spawn(run.command, run.args, {
+      cwd: run.cwd,
+      detached: !run.waitForExit,
       stdio: "ignore",
+      windowsHide: true,
     });
-    child.once("error", (error) =>
-      reject(
-        new Error(
-          `Couldn't start OBS (${launch.command}): ${error.message}. Set "obsPath" in brb.json or BRB_OBS_PATH.`,
-        ),
-      ));
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
+    const fail = (why: string) =>
+      reject(new Error(`Couldn't start OBS (${launch.command}): ${why}. Set "obsPath" in brb.json or BRB_OBS_PATH.`));
+    child.once("error", (error) => fail(error.message));
+    if (run.waitForExit) {
+      child.once("exit", (code) => code === 0 ? resolve() : fail(`${run.command} exited with code ${code}`));
+    } else {
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+    }
   });
+}
+
+/** A PowerShell single-quoted string literal. */
+const psQuote = (text: string) => `'${text.replaceAll("'", "''")}'`;
+
+/**
+ * What to actually run so OBS outlives `brb` and never holds `brb`'s output open.
+ *
+ * On Windows, a child started with CreateProcess inherits the parent's stdout/stderr pipe handles, so anything
+ * capturing `brb`'s output (a script, an agent, `$(brb ...)`) hangs until OBS exits. `Start-Process` launches through
+ * the shell without inheriting handles, so PowerShell starts OBS and exits straight away.
+ */
+export function detachedCommand(
+  launch: LaunchCommand,
+  platform: string,
+): LaunchCommand & { waitForExit: boolean } {
+  if (platform !== "win32") return { ...launch, waitForExit: false };
+  const parts = [`Start-Process -FilePath ${psQuote(launch.command)}`];
+  if (launch.cwd) parts.push(`-WorkingDirectory ${psQuote(launch.cwd)}`);
+  if (launch.args.length) parts.push(`-ArgumentList ${launch.args.map(psQuote).join(",")}`);
+  return {
+    command: "powershell.exe",
+    args: ["-NoProfile", "-NonInteractive", "-Command", parts.join(" ")],
+    waitForExit: true,
+  };
 }
 
 export interface LaunchOptions {
@@ -86,23 +115,47 @@ export interface LaunchOptions {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * The WebSocket opens before OBS finishes loading its scenes; until then every request fails with "not ready".
+ * Waits up to `waitMs` for the first real answer, and closes the client if it never comes.
+ */
+async function awaitReady(client: ObsClient, waitMs: number): Promise<ObsClient> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      await client.request("GetCurrentProgramScene");
+      return client;
+    } catch (error) {
+      const notReady = error instanceof ObsRequestError && error.code === NotReady;
+      if (!notReady || Date.now() >= deadline) {
+        client.close();
+        throw notReady ? new Error(`OBS is up but still wasn't ready after ${Math.round(waitMs / 1000)}s.`) : error;
+      }
+      await sleep(500);
+    }
+  }
+}
+
+/**
  * Connects to OBS. When nothing is listening and launching is allowed, starts OBS and keeps retrying until its
- * WebSocket server answers. Auth and timeout errors are never retried: they mean OBS is up but unhappy.
+ * WebSocket server answers, then waits for OBS to finish loading. Auth and timeout errors are never retried: they
+ * mean OBS is up but unhappy.
  */
 export async function connectLaunching(connect: ConnectOptions, options: LaunchOptions): Promise<ObsClient> {
+  const { waitMs = 30_000 } = options;
   try {
-    return await ObsClient.connect(connect);
+    const client = await ObsClient.connect(connect);
+    // Already running: only wait out a still-loading OBS when we're the kind of command that needs it.
+    return options.launch ? await awaitReady(client, waitMs) : client;
   } catch (error) {
     if (!(error instanceof ObsUnreachableError) || !options.launch || !isLocalUrl(connect.url)) throw error;
   }
   options.onLaunch?.();
   await (options.start ?? (() => spawnObs(resolveLaunch(process.platform, process.env))))();
-  const { waitMs = 30_000 } = options;
   const deadline = Date.now() + waitMs;
   for (;;) {
     await sleep(500);
     try {
-      return await ObsClient.connect(connect);
+      return await awaitReady(await ObsClient.connect(connect), Math.max(deadline - Date.now(), 0));
     } catch (error) {
       if (!(error instanceof ObsUnreachableError)) throw error;
       if (Date.now() >= deadline) {

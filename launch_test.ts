@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { FakeObs } from "./fake_obs.ts";
-import { connectLaunching, isLocalUrl, readObsPassword, resolveLaunch } from "./launch.ts";
+import { connectLaunching, detachedCommand, isLocalUrl, readObsPassword, resolveLaunch } from "./launch.ts";
 import { ObsUnreachableError } from "./obs.ts";
 
 /** A port nothing is listening on right now. */
@@ -46,7 +46,11 @@ Deno.test("connectLaunching starts OBS when nothing is listening, then connects 
         launched++;
         // OBS takes a moment to open its WebSocket server after the process starts.
         setTimeout(async () => {
-          fake = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main", port });
+          const started = await FakeObs.start({ password: "hunter2", scenes: ["Main"], current: "Main", port });
+          fake = started;
+          // ...and then keeps answering "not ready" while it loads its scenes.
+          started.state.notReady = true;
+          setTimeout(() => started.state.notReady = false, 1200);
         }, 700);
         return Promise.resolve();
       },
@@ -95,6 +99,23 @@ Deno.test("connectLaunching gives up with a useful message when OBS never opens 
   assertStringIncludes(error.message, "WebSocket Server Settings");
 });
 
+Deno.test("connectLaunching reports an OBS that opens its WebSocket but never finishes loading", async () => {
+  await using obs = await FakeObs.start({ scenes: ["Main"], current: "Main" });
+  obs.state.notReady = true;
+  const port = obs.port;
+  // OBS is "already running" (reachable), so start must not be needed: reachability alone isn't readiness.
+  const error = await assertRejects(
+    () =>
+      connectLaunching({ url: `ws://127.0.0.1:${port}` }, {
+        launch: true,
+        start: () => Promise.resolve(),
+        waitMs: 800,
+      }),
+    Error,
+  );
+  assertStringIncludes(error.message, "still wasn't ready");
+});
+
 Deno.test("readObsPassword reads OBS's own settings only when auth is on", () => {
   const config = (value: unknown) => () => JSON.stringify(value);
   const win = { APPDATA: "C:\\Users\\me\\AppData\\Roaming" };
@@ -131,4 +152,24 @@ Deno.test("readObsPassword reads OBS's own settings only when auth is on", () =>
     }),
     undefined,
   );
+});
+
+Deno.test("detachedCommand starts OBS through Start-Process on Windows so it can't inherit brb's output pipe", () => {
+  const win = detachedCommand(resolveLaunch("win32", { ProgramFiles: "C:\\Program Files" }), "win32");
+  assertEquals(win.command, "powershell.exe");
+  assertEquals(win.waitForExit, true);
+  assertEquals(win.args.slice(0, 3), ["-NoProfile", "-NonInteractive", "-Command"]);
+  assertEquals(
+    win.args[3],
+    "Start-Process -FilePath 'C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe' " +
+      "-WorkingDirectory 'C:\\Program Files\\obs-studio\\bin\\64bit' -ArgumentList '--disable-shutdown-check'",
+  );
+
+  // A quote in the path can't break out of the command.
+  const odd = detachedCommand({ command: "C:\\it's\\obs64.exe", args: [], cwd: "C:\\it's" }, "win32");
+  assertEquals(odd.args[3], "Start-Process -FilePath 'C:\\it''s\\obs64.exe' -WorkingDirectory 'C:\\it''s'");
+
+  // Elsewhere OBS is spawned directly and detached.
+  const linux = detachedCommand(resolveLaunch("linux", {}), "linux");
+  assertEquals([linux.command, linux.waitForExit], ["obs", false]);
 });

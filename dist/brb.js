@@ -34,6 +34,7 @@ var ObsUnreachableError = class extends Error {
   }
 };
 var ResourceNotFound = 600;
+var NotReady = 207;
 function toBase64(bytes) {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
 }
@@ -666,33 +667,79 @@ function spawnObs(launch) {
       reject(new Error(`Can't find OBS at ${launch.command}. Set "obsPath" in brb.json or BRB_OBS_PATH, or start it yourself.`));
       return;
     }
-    const child = spawn(launch.command, launch.args, {
-      cwd: launch.cwd,
-      detached: true,
-      stdio: "ignore"
+    const run2 = detachedCommand(launch, process.platform);
+    const child = spawn(run2.command, run2.args, {
+      cwd: run2.cwd,
+      detached: !run2.waitForExit,
+      stdio: "ignore",
+      windowsHide: true
     });
-    child.once("error", (error) => reject(new Error(`Couldn't start OBS (${launch.command}): ${error.message}. Set "obsPath" in brb.json or BRB_OBS_PATH.`)));
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
+    const fail = (why) => reject(new Error(`Couldn't start OBS (${launch.command}): ${why}. Set "obsPath" in brb.json or BRB_OBS_PATH.`));
+    child.once("error", (error) => fail(error.message));
+    if (run2.waitForExit) {
+      child.once("exit", (code) => code === 0 ? resolve() : fail(`${run2.command} exited with code ${code}`));
+    } else {
+      child.once("spawn", () => {
+        child.unref();
+        resolve();
+      });
+    }
   });
 }
+var psQuote = (text) => `'${text.replaceAll("'", "''")}'`;
+function detachedCommand(launch, platform) {
+  if (platform !== "win32") return {
+    ...launch,
+    waitForExit: false
+  };
+  const parts = [
+    `Start-Process -FilePath ${psQuote(launch.command)}`
+  ];
+  if (launch.cwd) parts.push(`-WorkingDirectory ${psQuote(launch.cwd)}`);
+  if (launch.args.length) parts.push(`-ArgumentList ${launch.args.map(psQuote).join(",")}`);
+  return {
+    command: "powershell.exe",
+    args: [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      parts.join(" ")
+    ],
+    waitForExit: true
+  };
+}
 var sleep2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function awaitReady(client, waitMs) {
+  const deadline = Date.now() + waitMs;
+  for (; ; ) {
+    try {
+      await client.request("GetCurrentProgramScene");
+      return client;
+    } catch (error) {
+      const notReady = error instanceof ObsRequestError && error.code === NotReady;
+      if (!notReady || Date.now() >= deadline) {
+        client.close();
+        throw notReady ? new Error(`OBS is up but still wasn't ready after ${Math.round(waitMs / 1e3)}s.`) : error;
+      }
+      await sleep2(500);
+    }
+  }
+}
 async function connectLaunching(connect, options) {
+  const { waitMs = 3e4 } = options;
   try {
-    return await ObsClient.connect(connect);
+    const client = await ObsClient.connect(connect);
+    return options.launch ? await awaitReady(client, waitMs) : client;
   } catch (error) {
     if (!(error instanceof ObsUnreachableError) || !options.launch || !isLocalUrl(connect.url)) throw error;
   }
   options.onLaunch?.();
   await (options.start ?? (() => spawnObs(resolveLaunch(process.platform, process.env))))();
-  const { waitMs = 3e4 } = options;
   const deadline = Date.now() + waitMs;
   for (; ; ) {
     await sleep2(500);
     try {
-      return await ObsClient.connect(connect);
+      return await awaitReady(await ObsClient.connect(connect), Math.max(deadline - Date.now(), 0));
     } catch (error) {
       if (!(error instanceof ObsUnreachableError)) throw error;
       if (Date.now() >= deadline) {

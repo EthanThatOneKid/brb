@@ -26,6 +26,8 @@ export class FakeObs implements AsyncDisposable {
     sizes: {} as Record<string, [number, number]>,
     /** Webcams that never deliver frames even when activated (e.g. another app has the device). */
     stuck: new Set<string>(),
+    /** While true, every request fails like OBS does while it is still loading. */
+    notReady: false,
     /** Every properties button pressed, as "input:property". */
     pressed: [] as string[],
   };
@@ -94,6 +96,7 @@ export class FakeObs implements AsyncDisposable {
 
   #handle(type: string, data: Json): Json | undefined {
     const s = this.state;
+    if (s.notReady) throw Object.assign(new Error("OBS is not ready to perform the request."), { code: 207 });
     switch (type) {
       case "GetCurrentProgramScene":
         return { currentProgramSceneName: s.current };

@@ -28,6 +28,8 @@ export class ObsUnreachableError extends Error {
 
 /** Error codes from the protocol that `brb` reacts to. */
 export const ResourceNotFound = 600;
+/** OBS has opened its WebSocket but hasn't finished loading, so it can't serve requests yet. */
+export const NotReady = 207;
 
 function toBase64(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)));
