@@ -18,6 +18,14 @@ export class ObsRequestError extends Error {
   }
 }
 
+/** Nothing is listening at the URL (OBS isn't running, or its WebSocket server is off). */
+export class ObsUnreachableError extends Error {
+  constructor(url: string) {
+    super(`Could not connect to OBS at ${url}.`);
+    this.name = "ObsUnreachableError";
+  }
+}
+
 /** Error codes from the protocol that `brb` reacts to. */
 export const ResourceNotFound = 600;
 
@@ -75,7 +83,7 @@ export class ObsClient {
       };
       const timer = setTimeout(() => fail(new Error(`Timed out connecting to OBS at ${url}.`)), timeoutMs);
 
-      socket.onerror = () => fail(new Error(`Could not connect to OBS at ${url}.`));
+      socket.onerror = () => fail(new ObsUnreachableError(url));
       socket.onclose = (event) => {
         const reason = event.code === 4009
           ? "Authentication failed (wrong OBS_WEBSOCKET_PASSWORD?)."

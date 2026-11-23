@@ -21,10 +21,17 @@ export interface Config {
   scene?: string;
   /** OBS WebSocket URL. */
   url?: string;
+  /** Start OBS when it isn't running (local URLs only). Defaults to true. */
+  launch?: boolean;
+  /** Path to the OBS program, when it isn't in the usual place. */
+  obsPath?: string;
+  /** Read the WebSocket password from OBS's own settings when none is given. Defaults to false. */
+  readObsPassword?: boolean;
 }
 
-const STRING_KEYS = ["message", "color", "bg", "source", "scene", "url"] as const;
-const KEYS = [...STRING_KEYS, "bgOpacity", "cam"];
+const STRING_KEYS = ["message", "color", "bg", "source", "scene", "url", "obsPath"] as const;
+const BOOLEAN_KEYS = ["cam", "launch", "readObsPassword"] as const;
+const KEYS = [...STRING_KEYS, ...BOOLEAN_KEYS, "bgOpacity"];
 
 export function parseConfig(text: string, where: string): Config {
   let raw: unknown;
@@ -46,7 +53,9 @@ export function parseConfig(text: string, where: string): Config {
   for (const key of STRING_KEYS) {
     if (key in object && typeof object[key] !== "string") throw new Error(`${where}: "${key}" must be a string.`);
   }
-  if ("cam" in object && typeof object.cam !== "boolean") throw new Error(`${where}: "cam" must be true or false.`);
+  for (const key of BOOLEAN_KEYS) {
+    if (key in object && typeof object[key] !== "boolean") throw new Error(`${where}: "${key}" must be true or false.`);
+  }
   if ("bgOpacity" in object && typeof object.bgOpacity !== "number") {
     throw new Error(`${where}: "bgOpacity" must be a number from 0 to 100.`);
   }

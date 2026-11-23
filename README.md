@@ -57,7 +57,8 @@ For background on OBS's WebSocket server, see the official
 | `brb ... --color red --bg black` | Set text and background colors (see [Colors](#colors))                                             |
 | `brb off` (`clear`, `hide`)      | Hide the message                                                                                   |
 | `brb setup`                      | Add the text source to the current scene                                                           |
-| `brb cam on\|off`                | Start/stop the virtual camera                                                                      |
+| `brb cam on\|off`                | Start/stop the virtual camera (on also wakes a webcam that has no video)                           |
+| `brb ... --no-launch`            | Don't start OBS when it isn't running (messages, `setup`, and `cam on` start it by default)        |
 | `brb stop`                       | Hide the message, stop the virtual camera, and release the webcam (light off)                      |
 | `brb stop --quit-obs`            | Also close OBS (local only; refuses while recording or streaming)                                  |
 | `brb status`                     | What viewers see right now                                                                         |
@@ -83,17 +84,20 @@ brb "back soon" --bg black --bg-opacity 100       # solid box
 
 Settings resolve in this order, first match wins: **flag → env var → `brb.json` → default**.
 
-| Setting            | Flag           | Env                      | `brb.json` key | Default                |
-| ------------------ | -------------- | ------------------------ | -------------- | ---------------------- |
-| OBS password       | `--password`   | `OBS_WEBSOCKET_PASSWORD` | not allowed    | none (required by OBS) |
-| WebSocket URL      | `--url`        | `OBS_WEBSOCKET_URL`      | `url`          | `ws://127.0.0.1:4455`  |
-| Text source name   | `--source`     | `BRB_SOURCE`             | `source`       | `brb-status`           |
-| Scene              | `--scene`      |                          | `scene`        | current program scene  |
-| Message (no words) |                |                          | `message`      | `Be right back`        |
-| Text color         | `--color`      |                          | `color`        | OBS source's own       |
-| Background color   | `--bg`         |                          | `bg`           | OBS source's own       |
-| Background opacity | `--bg-opacity` |                          | `bgOpacity`    | 70 when `--bg` is set  |
-| Start virtual cam  | `--no-cam`     |                          | `cam`          | `true`                 |
+| Setting            | Flag                  | Env                      | `brb.json` key    | Default                |
+| ------------------ | --------------------- | ------------------------ | ----------------- | ---------------------- |
+| OBS password       | `--password`          | `OBS_WEBSOCKET_PASSWORD` | not allowed       | none (required by OBS) |
+| WebSocket URL      | `--url`               | `OBS_WEBSOCKET_URL`      | `url`             | `ws://127.0.0.1:4455`  |
+| Text source name   | `--source`            | `BRB_SOURCE`             | `source`          | `brb-status`           |
+| Scene              | `--scene`             |                          | `scene`           | current program scene  |
+| Message (no words) |                       |                          | `message`         | `Be right back`        |
+| Text color         | `--color`             |                          | `color`           | OBS source's own       |
+| Background color   | `--bg`                |                          | `bg`              | OBS source's own       |
+| Background opacity | `--bg-opacity`        |                          | `bgOpacity`       | 70 when `--bg` is set  |
+| Start virtual cam  | `--no-cam`            |                          | `cam`             | `true`                 |
+| Start OBS if off   | `--no-launch`         |                          | `launch`          | `true` (local URLs)    |
+| OBS program path   |                       | `BRB_OBS_PATH`           | `obsPath`         | the usual install path |
+| Read OBS password  | `--read-obs-password` |                          | `readObsPassword` | `false`                |
 
 Prefer the env var over `--password`, which lands in your shell history.
 
@@ -117,6 +121,19 @@ teammates. `brb` uses the first file it finds: `--config <path>`, else `./brb.js
   Use `OBS_WEBSOCKET_PASSWORD`.
 - If it sets `color`/`bg`, that look is re-applied on every message, so everyone using the file gets the same style.
 - Skip `scene` in a shared file unless everyone names their scenes the same.
+
+## Starting OBS and waking the webcam
+
+- **OBS isn't running?** Showing a message, `brb setup`, and `brb cam on` start it (local URLs only), wait for its
+  WebSocket server, and carry on. `off`, `status`, `stop`, and `cam off` never start it. Opt out with `--no-launch` or
+  `"launch": false`. The default path is `%ProgramFiles%\obs-studio\bin\64bit\obs64.exe` on Windows, `OBS` on macOS, and
+  `obs` on Linux; set `obsPath` or `BRB_OBS_PATH` for anywhere else.
+- **Password prompt:** OBS keeps its WebSocket password in its own settings. `--read-obs-password` (or
+  `"readObsPassword": true`, which is not a secret) lets `brb` read it from there when you haven't given one.
+- **Black camera after OBS starts:** a webcam OBS hasn't really started can say it's active while sending no video. When
+  turning the camera on, `brb` presses the source's Activate button on any webcam in the scene that has no video (a
+  healthy camera is never touched), waits a few seconds for frames, and prints a warning if none arrive, which usually
+  means another app is using the webcam.
 
 ## FAQ
 
