@@ -150,10 +150,38 @@ Still nothing? Check what you see:
   `brb status` should say "virtual camera on".
 - **Your desktop, or the wrong picture:** the active OBS scene decides what's sent. Switch OBS to the scene you ran
   `brb setup` in, and make sure it has your camera in it.
-- **A blank white or black frame:** OBS's camera source needs a resolution. Double-click _Video Capture Device_ in OBS,
-  set **Resolution/FPS Type** to _Custom_, pick something like 1280x720, and close any other app using the webcam.
+- **A blank white or black frame:** first run `brb cam on`, which wakes a webcam that OBS thinks is running but isn't
+  sending video (see [Why is my camera black?](#why-is-my-camera-black)). If it prints a warning, close any other app
+  using the webcam. Otherwise OBS's camera source may need a resolution: double-click _Video Capture Device_ in OBS, set
+  **Resolution/FPS Type** to _Custom_, and pick something like 1280x720.
 - **Your picture but no text:** run `brb status`. "message hidden" means run `brb "..."`; "no brb-status source" means
   run `brb setup` in that scene.
+
+### Why is my camera black?
+
+The virtual camera is on, but OBS's webcam source isn't sending frames. This happens after `brb stop` followed by an OBS
+restart, and it can also happen when another app has the webcam. OBS can mark the source "active" while the device never
+started, so `brb status` still says "virtual camera on".
+
+`brb cam on` and `brb "..."` fix it: they check the webcam sources in the current scene and, for any with no video,
+press the source's own **Activate** button and wait a few seconds for frames. A camera that is already sending video is
+never touched. If `brb` prints `warning: "Video Capture Device" still has no video`, something else has the webcam:
+close the other app (a browser tab, Teams, Discord) and run `brb cam on` again.
+
+Doing it by hand: in OBS, open the camera source's properties (double-click _Video Capture Device_) and click
+**Activate**.
+
+This needs a `brb` from after the fix. If you installed it earlier, update (`git pull` in a checkout, or reinstall).
+
+### What if OBS isn't running?
+
+`brb "..."`, `brb setup`, and `brb cam on` start it for you (local OBS only), wait until it has finished loading, and
+carry on. `brb off`, `brb status`, `brb stop`, and `brb cam off` never start it. If OBS doesn't come up, `brb` says why:
+an unreadable path means setting `obsPath` in `brb.json` (or `BRB_OBS_PATH`); a WebSocket that never opens means
+enabling it under **Tools > WebSocket Server Settings**. Turn the behavior off with `--no-launch` or `"launch": false`.
+
+If OBS asks for a password, `brb` needs `OBS_WEBSOCKET_PASSWORD`, or `--read-obs-password` to read it from OBS's own
+settings. See [Starting OBS and waking the webcam](#starting-obs-and-waking-the-webcam).
 
 ### My message (and I) look mirrored in the call. Is `brb` flipping my camera?
 
